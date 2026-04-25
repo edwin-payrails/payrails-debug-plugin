@@ -1,0 +1,10 @@
+# Resolved environment file from op inject — never commit
+.env
+
+# Build process artifacts — internal use only, not for public plugin
+BUILD_CONTEXT.md
+BUILD_PLAN.md
+BUILD_PROGRESS.md
+
+# macOS
+.DS_Store

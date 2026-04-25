@@ -1,0 +1,35 @@
+{
+    "mcpServers": {
+        "plain": {
+            "type": "http",
+            "url": "https://mcp.plain.com/mcp"
+        },
+        "slack": {
+            "type": "http",
+            "url": "https://mcp.slack.com/mcp"
+        },
+        "linear": {
+            "type": "http",
+            "url": "https://mcp.linear.app/mcp"
+        },
+        "notion": {
+            "type": "http",
+            "url": "https://mcp.notion.com/mcp"
+        },
+        "playwright": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@playwright/mcp@latest"
+            ]
+        },
+        "grafana": {
+            "command": "${PAYRAILS_GRAFANA_BIN}",
+            "env": {
+                "GRAFANA_URL": "https://grafana.telemetry.payrails.io",
+                "GRAFANA_USERNAME": "${GRAFANA_USERNAME}",
+                "GRAFANA_PASSWORD": "${GRAFANA_PASSWORD}"
+            }
+        }
+    }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "payrails-debug-plugin",
+  "owner": {
+    "name": "Payrails Solutions Engineering",
+    "email": "edwin.samuel@payrails.com"
+  },
+  "metadata": {
+    "description": "Merchant integration debugging skills for Payrails Solutions Engineers."
+  },
+  "plugins": [
+    {
+      "name": "payrails-debug",
+      "source": "./"
+    }
+  ]
+}
