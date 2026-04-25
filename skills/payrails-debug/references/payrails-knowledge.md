@@ -47,6 +47,14 @@ curl -X POST "https://rc-api.staging.payrails.io/auth/token/{clientId}" \
 ```
 If the secret itself contains a single quote, use `$'...'` quoting instead. Do not use double quotes for secrets.
 
+**Always capture the auth token via pipeline — never hardcode the JWT string.**
+Hardcoding the raw token as `TOKEN="eyJ..."` across separate Bash calls reliably breaks: the string gets corrupted or the shell produces a token with `permissions: []` (empty), causing every subsequent data call to return `request.unauthorized`. This looks like an mTLS or access problem but is actually a bad token. Two independent debugging sessions hit this exact failure. Always capture in a single pipeline:
+```bash
+TOKEN=$(curl -s -X POST 'https://api.payrails.io/auth/token/{clientId}' \
+  -H 'x-api-key: {clientSecret}' | jq -r '.access_token')
+```
+Then reuse `$TOKEN` in all subsequent calls within the same shell session. A valid token has 100+ permissions in its payload; if you see `permissions: []`, the token is corrupt — re-auth via pipeline.
+
 **Always Grep/Read `doc/oas/src/` in the backend repo before guessing endpoint paths.**
 Trial-and-error curl is slower and teaches you nothing reusable. Search the OAS spec files first to confirm the correct path structure for any endpoint you haven't used before.
 

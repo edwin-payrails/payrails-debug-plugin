@@ -88,6 +88,15 @@ platform knowledge.
 - **Grafana or Temporal patterns** that worked — useful query shapes, namespace quirks,
   or codec-decryption notes that future sessions can reuse.
 
+### How to update existing entries
+
+When a session reveals new information that relates to existing documented guidance:
+
+- **Augment rather than replace** when the new finding is case-specific (e.g., "this approach didn't work for merchant X, but a different approach did"). The old guidance may still work for other merchants or contexts. Keep both, and note the distinguishing condition that determines which applies.
+- **Replace** only when the new finding genuinely supersedes the old (e.g., the documented endpoint is deprecated platform-wide, the tool was renamed, the schema changed for everyone). The old guidance is wrong, not just inapplicable to this case.
+- **When uncertain** whether the old guidance is wrong or just doesn't fit this case, default to augmenting. A rule that fits 80% of merchants is still useful documentation; removing it loses information for those merchants.
+- **When augmenting**, structure the entry so future sessions can quickly see which approach to try first, and what the fallback is if it fails. The "try first, fall back" framing fits naturally here.
+
 ### What NOT to add
 
 - If something didn't work and you found no alternative — do not document it as
