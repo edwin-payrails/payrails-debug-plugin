@@ -12,6 +12,8 @@ When you install this plugin, you get:
 
 The plugin is designed to make every SE's debugging experience consistent, regardless of how new they are to Payrails.
 
+The plugin installs at **user scope**, meaning once installed it works in any folder you open in Claude Code — your backend repo, a debugging scratch folder, anywhere. You don't need to install it per-project.
+
 ---
 
 ## Prerequisites
@@ -34,7 +36,7 @@ If you don't have one of these, talk to Edwin or check with `#ai` in Slack befor
 
 ### Step 1 — Add the plugin marketplace in Antigravity
 
-1. In Antigravity, open Claude Code's `/manage plugins` slash command
+1. In Antigravity, open Claude Code's `/manage-plugins` slash command
 2. Click the **Marketplaces** tab
 3. In the "GitHub repo, URL, or path…" field, enter:
    ```
@@ -73,7 +75,7 @@ The Grafana MCP needs your Payrails Grafana username and password. There are two
 Edit a `.env` file in the plugin folder with raw credentials:
 
 ```bash
-# Find where the plugin is installed
+# Find where the plugin is installed (cache location)
 ls ~/.claude/plugins/marketplaces/payrails-debug-plugin/
 
 # Create a .env file with your credentials (NEVER commit this!)
@@ -101,14 +103,13 @@ This path keeps credentials in 1Password. They never sit on your disk in plainte
 **1. Make sure prerequisites are installed**
 
 ```bash
-# Verify op CLI is installed and authenticated
-op --version
-op vault list  # should show your accessible vaults
+op --version          # verify op CLI is installed
+op vault list         # verify you're authenticated, see your vaults
 ```
 
 If `op` isn't installed: `brew install --cask 1password-cli`. Then `op signin`.
 
-Make sure your Grafana credentials are stored in 1Password as an item (e.g., named "Grafana" or similar) with username and password fields.
+Make sure your Grafana credentials are stored in 1Password as an item with username and password fields.
 
 **2. Clone the plugin repository locally**
 
@@ -125,7 +126,7 @@ cd payrails-debug-plugin
 
 The committed `.env.tpl` has placeholders. Edit it with your specific 1Password references.
 
-To find your op:// reference path: open 1Password, find your Grafana item, click the menu (•••) on any field, choose **"Copy Secret Reference"**. This gives you the exact `op://Vault/Item/field` path.
+To find your op:// reference path: open 1Password, find your Grafana item, click the menu (•••) on any field, choose **"Copy Secret Reference."** This gives you the exact `op://Vault/Item/field` path.
 
 Open `.env.tpl` in your editor and replace the placeholders:
 
@@ -212,17 +213,24 @@ Once set up:
 
 When the plugin maintainer pushes a new version:
 
+### Path A — Antigravity UI (recommended)
 1. Open Antigravity → Manage Plugins → Marketplaces tab
 2. Click the refresh icon next to `payrails-debug-plugin`
-3. Restart Claude Code session (or close/reopen Antigravity if using Grafana credentials — needed for env vars)
+3. Restart Claude Code session (or close/reopen Antigravity if using Grafana — env vars need to stay loaded)
 
-If the UI refresh doesn't seem to update:
+### Path B — Terminal (fallback)
+If the UI refresh doesn't seem to work:
 
 ```bash
 claude plugin update payrails-debug@payrails-debug-plugin
 ```
 
+You can run this from any folder — the plugin is user-scoped, so the command isn't tied to a specific directory.
+
 Then restart Claude Code.
+
+### Note about `/plugin` slash commands
+`/plugin install` and `/plugin marketplace add` slash commands are NOT available in Antigravity-embedded Claude Code. They only work in standalone Claude Code CLI. Use the Manage Plugins UI panel or the terminal command above.
 
 ---
 
@@ -242,9 +250,10 @@ Then restart Claude Code.
 - Restart Claude Code session
 - If still not working, restart Antigravity
 
-### Plugin appears installed but new MCPs from a recent update aren't showing
-- Plugin cache is stale; refresh the marketplace
-- Worst case: `claude plugin update payrails-debug@payrails-debug-plugin` from terminal
+### Plugin appears installed but new MCPs/features from a recent update aren't showing
+- Plugin cache is stale; refresh the marketplace (refresh icon in Marketplaces tab)
+- If UI refresh doesn't work: `claude plugin update payrails-debug@payrails-debug-plugin` from terminal
+- Then restart Claude Code
 
 ### "Per-project Disable" in `/mcp` removed Grafana for one workspace
 - The Disable button in `/mcp` only disables for the current project, not globally
@@ -253,6 +262,11 @@ Then restart Claude Code.
 ### Playwright MCP opens a Chromium browser window
 - Expected behavior, not a bug
 - Browser stays alive between tool calls for efficiency
+
+### Plugin shows wrong version even after refresh
+- Verify with: `cat ~/.claude/plugins/installed_plugins.json | grep -A 3 payrails-debug`
+- Look at the `installPath` — it should reference the latest version folder
+- If the path still shows an old version, fully restart Antigravity (close completely, relaunch)
 
 ---
 
