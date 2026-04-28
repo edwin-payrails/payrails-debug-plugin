@@ -50,6 +50,24 @@ If any required prerequisite is missing, install it before continuing. The plugi
 
 ---
 
+## Choosing where to clone (Path B only)
+
+If you'll use Path B for credentials (the recommended 1Password-integrated path), you'll need a local clone of this plugin repo. Pick a directory that fits how you organize your code — there's no required location.
+
+This guide refers to your chosen location as `<plugin-dir>` throughout. Replace `<plugin-dir>` with your actual path whenever you see it.
+
+Common choices teammates have used:
+- `~/Documents/Payrails/payrails-debug-plugin`
+- `~/code/payrails-debug-plugin`
+- `~/projects/payrails-debug-plugin`
+- `~/dev/payrails-debug-plugin`
+
+Once you've picked a path, use it consistently throughout setup. The shell function in the Daily Workflow section assumes a single fixed path, so settle on one before you finish setup.
+
+If you're using Path A (manual `.env`), you don't need to clone the repo at all — Path A keeps `.env` inside Antigravity's marketplace folder, which is system-managed. Skip this section.
+
+---
+
 ## Installation
 
 There are two installation paths. The CLI path is recommended — it's faster and works the same in any environment.
@@ -134,19 +152,21 @@ If `op` isn't installed: `brew install --cask 1password-cli`, then `op signin`.
 
 Your Grafana credentials must be stored in 1Password as an item with username and password fields.
 
-**2. Clone the plugin repo locally** (separate from the installed cache copy — needed because `.env.tpl` lives here):
+**2. Clone the plugin repo locally** (separate from the installed cache copy — needed because `.env.tpl` lives here).
+
+Decide on `<plugin-dir>` (your chosen clone location, see "Choosing where to clone" above). For the commands below, replace `<plugin-dir>` with your actual path. Example values: `~/Documents/Payrails/payrails-debug-plugin`, `~/code/payrails-debug-plugin`, etc.
 
 ```bash
-mkdir -p ~/Documents/Payrails
-cd ~/Documents/Payrails
-gh repo clone edwin-payrails/payrails-debug-plugin
-cd payrails-debug-plugin
+mkdir -p "$(dirname <plugin-dir>)"
+cd "$(dirname <plugin-dir>)"
+gh repo clone edwin-payrails/payrails-debug-plugin "$(basename <plugin-dir>)"
+cd <plugin-dir>
 ```
 
 **If you've cloned this repo before (e.g., you're a maintainer or contributor)**, the `gh repo clone` command will fail with "destination path already exists." That's expected — skip the clone and just `cd` into your existing checkout:
 
 ```bash
-cd ~/Documents/Payrails/payrails-debug-plugin
+cd <plugin-dir>
 ```
 
 Either way, the next steps work the same.
@@ -176,6 +196,8 @@ op inject -i .env.tpl -o .env
 ```
 
 You'll be prompted for Touch ID or your Mac password. Approve. This creates `.env` with your actual credentials. The `.env` file is gitignored — it never leaves your machine.
+
+**Note about `.env.tpl` content:** `op inject` parses any line in the file containing the literal substring `op://` as a real secret reference. This means **comment lines containing `op://` will cause inject to fail** with errors like `invalid secret reference 'op://...'`. The committed `.env.tpl` keeps `op://` only on the actual injection lines (`GRAFANA_USERNAME=` and `GRAFANA_PASSWORD=`); if you've edited the file and added explanatory comments, make sure none of them contain `op://`. If `op inject` fails with a parse error, run `grep -n 'op://' .env.tpl` and verify only the two injection lines match.
 
 **6. Source `.env` and launch Antigravity** (covered below).
 
@@ -258,9 +280,9 @@ source ~/.claude/plugins/marketplaces/payrails-debug-plugin/.env
 open -a "Antigravity" /path/to/your/workspace
 ```
 
-For Path B:
+For Path B (replace `<plugin-dir>` with your chosen plugin clone path):
 ```bash
-cd ~/Documents/Payrails/payrails-debug-plugin
+cd <plugin-dir>
 source .env
 open -a "Antigravity" /path/to/your/workspace
 ```
@@ -305,14 +327,14 @@ Once set up, a debugging session looks like:
 
 ### Optional shell function (recommended for Path B)
 
-Add this to your `~/.zshrc`:
+Add this to your `~/.zshrc`. Replace `<plugin-dir>` with your actual chosen plugin clone path (the same one you used in Path B Step 2), and replace `<your-default-workspace>` with your most common debugging folder (e.g. your Payrails backend clone path):
 
 ```bash
 function payrails-claude() {
-    cd ~/Documents/Payrails/payrails-debug-plugin
+    cd <plugin-dir>
     op inject -i .env.tpl -o .env || return 1
     source .env
-    cd "${1:-$HOME/Documents/Payrails/backend}"
+    cd "${1:-<your-default-workspace>}"
     open -a "Antigravity" .
 }
 ```
@@ -322,7 +344,7 @@ Reload your shell (`source ~/.zshrc`). Then start any debugging session with one
 payrails-claude
 ```
 
-This handles the credential refresh and terminal-launched Antigravity automatically.
+This handles the credential refresh and terminal-launched Antigravity automatically. The argument is optional — you can run `payrails-claude ~/some/other/folder` to launch in a different workspace.
 
 ---
 
@@ -405,7 +427,7 @@ rm -f ~/.claude/plugins/marketplaces/payrails-debug-plugin/.env
 claude plugin marketplace remove payrails-debug-plugin
 ```
 
-Then Cmd+Q Antigravity to clear in-memory plugin state. Optionally also delete the local clone if you used Path B (`rm -rf ~/Documents/Payrails/payrails-debug-plugin/`) and the Grafana binary (`rm ~/tools/mcp-grafana-official`).
+Then Cmd+Q Antigravity to clear in-memory plugin state. Optionally also delete the local clone if you used Path B (`rm -rf <plugin-dir>` — replace with your actual chosen clone path) and the Grafana binary (`rm ~/tools/mcp-grafana-official`).
 
 The `claude plugin marketplace remove` step is important: it cleans up the marketplace registration in your `~/.claude/settings.json` (under `extraKnownMarketplaces`). Without this step, even after deleting the filesystem clones, Antigravity will see "Marketplace already on disk — declared in user settings" when you try to re-install, blocking a fresh install.
 

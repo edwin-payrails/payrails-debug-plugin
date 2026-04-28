@@ -3,8 +3,8 @@
 #   op inject -i .env.tpl -o .env
 # The resulting .env should NOT be committed (see .gitignore).
 #
-# Edit the op:// references below to match your 1Password vault and item.
-# Path format: op://<vault-name>/<item-name>/<field-name>
+# Edit the references below to match your 1Password vault and item.
+# Path format: vault-name/item-name/field-name
 
 GRAFANA_USERNAME="op://<your-vault>/<your-grafana-item>/username"
 GRAFANA_PASSWORD="op://<your-vault>/<your-grafana-item>/password"
