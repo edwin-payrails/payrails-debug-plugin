@@ -121,6 +121,18 @@ To make a learning flow back to all teammates, someone with repo access has to p
 
 For active development where this matters, install the plugin via local-path (pointing at Location 1 directly) instead of from GitHub — that way the knowledge-update skill writes to the canonical clone, and the maintainer just commits and pushes when ready.
 
+### "Marketplace already on disk" message during install
+
+The `claude plugin marketplace add edwin-payrails/payrails-debug-plugin` command, when run a second time after the marketplace is already registered, prints:
+
+> `✓ Marketplace 'payrails-debug-plugin' already on disk — declared in user settings`
+
+The checkmark indicates this is a success message, not an error. The command did what it was asked to do: it confirmed the marketplace registration. There's nothing to fix.
+
+The phrasing is genuinely confusing on first read because "already on disk — declared in user settings" sounds like a stale-state warning. It isn't. It's the CLI's way of saying "this is already done." If you (or Claude Code, in autonomous-install scenarios) are re-running marketplace-add for any reason — retrying after a partial install, scripting an idempotent setup, etc. — this message is the expected output and you can proceed.
+
+If you actually want a fresh marketplace state (because something is genuinely broken), follow the Complete uninstall sequence below — `claude plugin marketplace remove payrails-debug-plugin` is the command that clears the registration, after which a fresh `marketplace add` will print the first-install confirmation message instead.
+
 ---
 
 ## Complete uninstall
@@ -248,6 +260,71 @@ Update via CLI: `claude plugin update payrails-debug@payrails-debug-plugin`.
 If only the plugin cache is refreshed but the marketplace cache is stale, the system thinks "I'm already at the latest." If only the marketplace cache is refreshed but the plugin cache isn't updated, the user keeps running the old version even though a new one is known to exist.
 
 When a maintainer pushes a new version, teammates need both: refresh marketplace first (to learn about the new version), then update plugin (to actually pick it up). The UI refresh icon does both in one click; the CLI requires running both commands explicitly.
+
+---
+
+## Testing the plugin: Claude-Code-driven autonomous installs
+
+When testing this plugin's install flow as a fresh-teammate simulation — i.e. having Claude Code in Antigravity drive the entire install autonomously by reading the README — Claude Code exhibits a few behaviors that don't show up during normal teammate use, and which need to be accounted for in the test setup and cleanup.
+
+This section is for maintainers running these tests, not for end-users.
+
+### Behavior: autonomous memory-file creation
+
+When Claude Code completes an install task, it autonomously writes memory files capturing what it learned about the user and the project. These files live under `~/.claude/projects/<launch-folder>/memory/`, where `<launch-folder>` is a slug of whatever folder Antigravity was opened in.
+
+Files created on a typical install run:
+- `user_role.md` — Claude Code's inferred description of who the user is (name, role, email)
+- `project_<plugin-name>.md` — install state and any friction notes Claude Code captured during the run
+- `MEMORY.md` — index linking to the above
+
+These memory files are *project-scoped*: they apply only when Claude Code is launched in that specific folder. They persist across sessions until explicitly deleted.
+
+For real-teammate use this behavior is fine — useful, even, since it carries learnings forward. But for fresh-teammate-simulation tests, it's a problem because:
+
+1. The test is supposed to simulate a user encountering the plugin for the first time. Existing memory files violate that.
+2. Claude Code infers the *real* user identity from `git config --global user.email`, system metadata, etc., even when the test is being run under a different GitHub identity (e.g. a personal account standing in for a teammate). This contaminates future Claude Code sessions on the maintainer's machine with a "you are Edwin Samuel, maintainer" framing that a real teammate's Claude Code wouldn't have.
+
+### Behavior: launch folder becomes a "project"
+
+If the test launches Antigravity from `$HOME` (which is the cleanest way to simulate a teammate not having any project context yet), Claude Code creates an entry under `~/.claude/projects/-Users-<username>/memory/` — treating `$HOME` as a project. This is harmless but unusual; the directory will accumulate memory files until explicitly cleaned.
+
+### Cleaning up after a test run
+
+After completing an autonomous-install test, remove the memory files Claude Code created. The exact paths depend on which folder Antigravity was launched from:
+
+```bash
+find ~/.claude/projects -name "user_role.md" -o -name "project_payrails*.md" -o -name "MEMORY.md" 2>/dev/null
+```
+
+Review the output. Memory files with timestamps from the test run are candidates for removal. Memory files with older timestamps are pre-existing real usage and should be left alone — distinguish before deleting.
+
+To remove the test-run files, the typical pattern is to delete the entire `memory/` subfolder under whichever launch-folder slug was created during the test:
+
+```bash
+rm -rf ~/.claude/projects/-Users-<username>/memory/
+```
+
+Use the path from the `find` output above. Don't blanket-delete `~/.claude/projects/` — that has unrelated session transcripts and other plugins' state.
+
+### Bootstrap-prompt redaction list (test-only)
+
+When prompting Claude Code to drive an install autonomously, include an explicit list of files whose contents must not be printed back to the test driver. The minimum list:
+
+- `.env`
+- `~/.claude/settings.json`
+- 1Password CLI output
+- `~/.zshrc`
+
+The first three are obvious; the fourth is the one that's easy to miss. During an install, Claude Code naturally runs `tail ~/.zshrc` or `cat ~/.zshrc` to verify whether the optional shell function is already present. If the user has plaintext credentials exported in `.zshrc` (e.g., `export ANTHROPIC_API_KEY=...`), those values appear in stdout and risk being captured in screenshots or transcripts. Add `~/.zshrc` to the redaction list to prevent this — instruct Claude Code to use existence-only checks (e.g., `grep -n "payrails-claude" ~/.zshrc` rather than `tail ~/.zshrc`).
+
+### Optional: instruct Claude Code not to write memory files
+
+If you'd rather not deal with cleanup at the end of the test, add an explicit instruction to the bootstrap prompt:
+
+> Do not write to memory files (`user_role.md`, `MEMORY.md`, project memory). Do not infer the user's real identity into persistent state.
+
+This skips the memory-file creation behavior entirely. Cleanup then doesn't apply. The trade-off is that you lose Claude Code's own captured friction notes from the run, which can sometimes be useful as cross-check evidence.
 
 ---
 
