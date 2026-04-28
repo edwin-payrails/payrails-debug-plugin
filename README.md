@@ -33,15 +33,15 @@ The list below shows what you'll need depending on which credential setup path y
 **Always required:**
 - **Antigravity or standalone Claude Code CLI** — installed and working
 - **GitHub access** to `edwin-payrails/payrails-debug-plugin` — currently a private repo. Ask Edwin to add you as a collaborator. After security review, this moves to `payrails-hub` and access becomes automatic for Payrails GitHub org members.
-- **`gh` CLI** — authenticated to your Payrails-affiliated GitHub account. If you haven't set up `gh` before, follow GitHub's setup at `https://cli.github.com`. Verify with `gh auth status` — you should see your Payrails account as Active with `repo` scope.
+- **`gh` CLI** — authenticated to a GitHub account that has access to `edwin-payrails/payrails-debug-plugin`. This is whichever account you've been added to as a collaborator — it does NOT have to be a specific Payrails-affiliated account; a personal GitHub account also works as long as it has been granted repo access. If you haven't set up `gh` before, follow GitHub's setup at `https://cli.github.com`. Verify with `gh auth status` — you should see the authorized account as Active with `repo` scope. If you have multiple accounts, switch with `gh auth switch -u <username>`.
 - **Grafana credentials** for `https://grafana.telemetry.payrails.io` — your Payrails Grafana username and password.
 
 **Required only if using Path B (recommended) for credentials:**
-- **1Password CLI (`op`)** — installed and signed in to your Payrails 1Password vault. Verify with `op vault list`. If not installed: `brew install --cask 1password-cli`, then `op signin`.
-- **Your Grafana credentials stored in 1Password** as an item with username and password fields.
+- **1Password CLI (`op`)** — installed and signed in to your Payrails 1Password vault. Verify with `op vault list`. If not installed: `brew install --cask 1password-cli`, then `op signin`. **If you don't have 1Password CLI and can't easily install it, skip this and use Path A instead** — Path A is the manual `.env` shortcut and works without `op`.
+- **Your Grafana credentials stored in 1Password** as an item with username and password fields. (Same fallback applies — if your credentials aren't in 1Password, use Path A.)
 
 **Required only if using Playwright MCP** (browser automation for fetching provider docs):
-- **Node.js 18+** — verify with `node --version`. Most Payrails developers already have this.
+- **Node.js 18+** — verify with `node --version`. Most Payrails developers already have this. **If Node.js is missing and you don't need browser automation, skip this and continue setup** — the Playwright MCP will fail to load but every other plugin feature works fine. Install Node.js later if you want Playwright.
 
 **Convenience:**
 - **Homebrew** — the macOS package manager. Not strictly required, but the easiest way to install `gh`, `op`, or `node` if you don't have them. Install from `https://brew.sh`.
@@ -142,6 +142,14 @@ cd ~/Documents/Payrails
 gh repo clone edwin-payrails/payrails-debug-plugin
 cd payrails-debug-plugin
 ```
+
+**If you've cloned this repo before (e.g., you're a maintainer or contributor)**, the `gh repo clone` command will fail with "destination path already exists." That's expected — skip the clone and just `cd` into your existing checkout:
+
+```bash
+cd ~/Documents/Payrails/payrails-debug-plugin
+```
+
+Either way, the next steps work the same.
 
 **3. Find your 1Password reference path:**
 
@@ -394,9 +402,12 @@ claude plugin uninstall payrails-debug@payrails-debug-plugin
 rm -rf ~/.claude/plugins/cache/payrails-debug-plugin/
 rm -rf ~/.claude/plugins/marketplaces/payrails-debug-plugin/
 rm -f ~/.claude/plugins/marketplaces/payrails-debug-plugin/.env
+claude plugin marketplace remove payrails-debug-plugin
 ```
 
 Then Cmd+Q Antigravity to clear in-memory plugin state. Optionally also delete the local clone if you used Path B (`rm -rf ~/Documents/Payrails/payrails-debug-plugin/`) and the Grafana binary (`rm ~/tools/mcp-grafana-official`).
+
+The `claude plugin marketplace remove` step is important: it cleans up the marketplace registration in your `~/.claude/settings.json` (under `extraKnownMarketplaces`). Without this step, even after deleting the filesystem clones, Antigravity will see "Marketplace already on disk — declared in user settings" when you try to re-install, blocking a fresh install.
 
 ---
 
