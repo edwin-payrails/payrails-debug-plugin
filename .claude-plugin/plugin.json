@@ -1,6 +1,6 @@
 {
   "name": "payrails-debug",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Merchant integration debugging skills for Payrails Solutions Engineers.",
   "skills": "./skills"
 }
