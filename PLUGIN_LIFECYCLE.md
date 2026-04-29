@@ -377,6 +377,8 @@ If the test launches Antigravity from `$HOME` (which is the cleanest way to simu
 
 When Antigravity is launched fresh (after Cmd+Q), it doesn't open with a blank welcome screen — it restores whichever folder was last open. For maintainer use this is convenient. For fresh-teammate tests it's a contamination: the launched Antigravity has a folder context that a fresh teammate wouldn't have.
 
+This behavior interacts badly with a broken `~/.zshrc`: when `~/.zshrc` has a parse error, Antigravity may not honor the `open -a folder` argument and will fall back to its last-known folder. This is one reason the pre-test sanity check (see below) verifies `~/.zshrc` loads cleanly before any Reset A or test launch.
+
 **Fix during tests**: after Antigravity launches, use Cmd+Shift+N to open a new no-folder window before starting the Claude Code session. Confirm by checking the window title or breadcrumb — it should not show any project name.
 
 ### Behavior: maintainer's `payrails-claude` shell function suppresses Claude Code's question-asking
@@ -403,6 +405,23 @@ A real teammate would only have one `gh` account; the multi-account state is a m
 
 > Don't switch gh accounts. Use whichever account is currently active — it already has the access we need.
 
+### Pre-test sanity check (run before Reset A)
+
+Before running Reset A — and certainly before launching Antigravity at any test folder — confirm the maintainer's shell environment loads cleanly:
+
+```bash
+zsh -i -c 'echo zshrc-loaded-without-errors'
+```
+
+Expected: prints `zshrc-loaded-without-errors` with no parse errors above it.
+
+If the output shows a parse error (e.g., `parse error near '}'`), `~/.zshrc` is broken in some way unrelated to the plugin and needs fixing before any test can run. Reasons this matters:
+- Reset A's `~/.zshrc` move-aside step writes a filtered version of `~/.zshrc`. If the source file is already broken, the filtered version inherits the brokenness.
+- Antigravity's `open -a folder` argument may not be honored when `~/.zshrc` has parse errors — Antigravity falls back to last-known folder, contaminating the test.
+- The maintainer's daily-use tools (including `payrails-claude`) may have been silently broken before the test started, and the test is the first time it surfaces.
+
+If the sanity check fails, fix `~/.zshrc` first (or restore from a known-good backup) before proceeding.
+
 ### Reset playbooks
 
 There are three reset scenarios. Run the one that matches your situation. They're explicit because mixing them up is how locations get out of sync.
@@ -411,7 +430,9 @@ There are three reset scenarios. Run the one that matches your situation. They'r
 
 **When to run**: Before starting any fresh-teammate-simulation test phase.
 
-**Cleans**: plugin install state (Locations 2, 3, 5), maintainer `.env` and `.env.tpl` (move-aside backups), Grafana binary, `/tmp` Grafana artifacts, `~/.zshrc` shell function (move-aside backup, NOT in-place comment markers).
+**Prerequisite**: Run the pre-test sanity check above. Don't proceed if `~/.zshrc` has parse errors.
+
+**Cleans**: plugin install state (Locations 2, 3, 5), maintainer `.env` and `.env.tpl` (move-aside backups + revert live `.env.tpl` to placeholder state), Grafana binary, `/tmp` Grafana artifacts, `~/.zshrc` shell function (move-aside backup using awk block-skip, NOT line-based grep filter or in-place comment markers).
 
 ```bash
 # === Chunk A1: plugin uninstall + filesystem + registration ===
@@ -431,10 +452,17 @@ ls -la ~/.claude/plugins/marketplaces/ 2>/dev/null | grep -i payrails || echo "M
 # === Chunk A2: maintainer state move-aside (.env, .env.tpl, Grafana binary) ===
 mv ~/Documents/Payrails/payrails-debug-plugin/.env ~/Documents/Payrails/payrails-debug-plugin/.env.maintainer-backup 2>/dev/null
 cp ~/Documents/Payrails/payrails-debug-plugin/.env.tpl ~/Documents/Payrails/payrails-debug-plugin/.env.tpl.maintainer-backup
+cd ~/Documents/Payrails/payrails-debug-plugin && git checkout .env.tpl && cd -
 mv ~/tools/mcp-grafana-official ~/tools/mcp-grafana-official.bak 2>/dev/null
+
+echo "--- verify chunk A2 ---"
+ls -la ~/Documents/Payrails/payrails-debug-plugin/.env* 2>/dev/null
+ls -la ~/tools/ | grep -i grafana
+echo "--- .env.tpl head (should show placeholders, not real refs) ---"
+head -15 ~/Documents/Payrails/payrails-debug-plugin/.env.tpl
 ```
 
-The `.env.tpl` is *copied* (not moved) to a backup because the maintainer's working `.env.tpl` typically has real `op://` references that they need restored after the test. The committed `.env.tpl` has placeholder text; reverting via `git checkout` would break the maintainer's daily flow. The backup-restore mechanic preserves both the test's needs (test runs against committed-state `.env.tpl`, which the live file already matches) and the maintainer's daily-use state (restored in Reset C).
+The `.env.tpl` is *copied* (not moved) to a backup because the maintainer's working `.env.tpl` typically has real `op://` references that they need restored after the test. The `git checkout .env.tpl` immediately afterwards reverts the live file to committed (placeholder) state — without that revert, the maintainer's real refs would still be in the live file when Claude Code inspects it during the test, breaking fresh-teammate fidelity. The backup-restore mechanic preserves both the test's needs (test runs against committed-state `.env.tpl`) and the maintainer's daily-use state (restored in Reset C).
 
 ```bash
 # === Chunk A3: /tmp cleanup ===
@@ -450,19 +478,32 @@ ls -la /tmp/ 2>/dev/null | grep -E "grafana|darwin" || echo "TMP_FULLY_CLEAN"
 `/tmp` accumulates Grafana install artifacts across sessions under multiple naming patterns (`mcp-grafana.tar.gz`, `darwin.arm64.grafana.tar.gz`, sometimes a `mcp-grafana` directory from extraction). Stale artifacts cause confusion — `tar` overwrites existing extractions silently, making it ambiguous which binary ended up at the destination. Each `rm` is a separate command rather than combined: zsh's default behavior fails the entire command line on a missing-glob match, so chained globs can halt before processing literal paths.
 
 ```bash
-# === Chunk A4: ~/.zshrc handling — move-aside, NOT in-place markers ===
+# === Chunk A4: ~/.zshrc handling — move-aside via awk block-skip ===
 cp ~/.zshrc ~/.zshrc.maintainer-backup
-grep -v "payrails-claude" ~/.zshrc.maintainer-backup | grep -v "payrails-debug" > ~/.zshrc.tmp
+awk '
+/^function payrails-claude/,/^}/ { next }
+/^payrails-claude\(\)/,/^}/ { next }
+{ print }
+' ~/.zshrc.maintainer-backup > ~/.zshrc.tmp
 mv ~/.zshrc.tmp ~/.zshrc
 
 echo "--- verify chunk A4 ---"
 zsh -i -c 'type payrails-claude' 2>&1 | head -3
+zsh -i -c 'echo zshrc-loaded-without-errors' 2>&1 | tail -3
 ls -la ~/.zshrc ~/.zshrc.maintainer-backup
+wc -l ~/.zshrc ~/.zshrc.maintainer-backup
 ```
 
-Note the verification uses `zsh -i -c` (interactive) not `zsh -c`. Non-interactive shells don't source `~/.zshrc`, so `zsh -c 'type payrails-claude'` returns "not found" regardless of whether the function is defined. Use the `-i` flag for an actual test of whether the function is loaded in a real shell.
+Expected verification output:
+- `payrails-claude not found` (function gone — good).
+- `zshrc-loaded-without-errors` printed cleanly with no parse errors above it (good).
+- `~/.zshrc` line count smaller than `.maintainer-backup` (function block removed).
 
-**Why move-aside instead of in-place comment markers**: an earlier approach commented out the function block in place using marker prefixes (e.g., `# PHASE4_RERUN_COMMENTED_OUT: ...`). When Claude Code subsequently inspected `~/.zshrc`, it found the marker-commented function and interpreted it as a "partial setup that needs fixing" — attempting to overwrite the entire commented block with a new active function. Move-aside (writing a clean file without the function entirely, keeping the original at `.maintainer-backup`) is unambiguous: there's nothing for Claude Code to "fix."
+The verification uses `zsh -i -c` (interactive) not `zsh -c`. Non-interactive shells don't source `~/.zshrc`, so `zsh -c 'type payrails-claude'` returns "not found" regardless of whether the function is defined. Use the `-i` flag for an actual test of whether the function is loaded in a real shell.
+
+**Why awk block-skip and not `grep -v`**: an earlier version of this chunk used `grep -v "payrails-claude" | grep -v "payrails-debug"` to filter the function out of `~/.zshrc`. That approach filters by line — the opening line of `payrails-claude` (which contains the function name) gets removed, but body lines that don't reference plugin-specific strings (e.g., `cd "${1:-...}"`, `op inject -i .env.tpl -o .env`, the closing `}` brace) survive into the filtered output. The result is a malformed `~/.zshrc` with an orphan closing brace and no matching opener, which produces a `parse error near '}'` when sourced. Empirically observed during a real maintainer test (v0.1.8 fix). The awk block-skip drops everything from the function header to the matching `}` regardless of body content, handling both `function payrails-claude { ... }` and `payrails-claude() { ... }` definition styles.
+
+**Why move-aside instead of in-place comment markers**: an even earlier approach commented out the function block in place using marker prefixes (e.g., `# PHASE4_RERUN_COMMENTED_OUT: ...`). When Claude Code subsequently inspected `~/.zshrc`, it found the marker-commented function and interpreted it as a "partial setup that needs fixing" — attempting to overwrite the entire commented block with a new active function. Move-aside (writing a clean file without the function entirely, keeping the original at `.maintainer-backup`) is unambiguous: there's nothing for Claude Code to "fix."
 
 ```bash
 # === Chunk A5: GitHub access + Antigravity quit (browser/dock, not terminal) ===
@@ -475,10 +516,10 @@ Note the verification uses `zsh -i -c` (interactive) not `zsh -c`. Non-interacti
 
 **Expected end state after Reset A**:
 - Plugin uninstalled, all five locations clean
-- Maintainer `.env` and `.env.tpl` backed up; live `.env.tpl` matches committed (placeholder) state
+- Maintainer `.env` and `.env.tpl` backed up; live `.env.tpl` reverted to committed (placeholder) state via `git checkout`
 - `~/tools/`: `mcp-grafana-bin` (Syed's fork compiled, untouched), `mcp-grafana/` (Syed's fork source, untouched), `mcp-grafana-official.bak`, no plain `mcp-grafana-official`
 - `/tmp/`: no `mcp-grafana*` or `darwin*` files
-- `~/.zshrc`: no `payrails-claude` function active; backup at `~/.zshrc.maintainer-backup`
+- `~/.zshrc`: no `payrails-claude` function active; `zsh -i -c 'echo ok'` loads cleanly; backup at `~/.zshrc.maintainer-backup`
 - Teammate-identity `gh` account has fresh accepted repo invite
 - Antigravity not running
 
@@ -548,10 +589,11 @@ rm -f ~/.zshrc.maintainer-backup
 
 echo "--- verify chunk C2 ---"
 zsh -i -c 'type payrails-claude' 2>&1 | head -3
+zsh -i -c 'echo zshrc-loaded-without-errors' 2>&1 | tail -3
 wc -l ~/.zshrc
 ```
 
-Restoring from backup is cleaner than reversing in-place edits — the saved file is byte-identical to the original, no chance of leftover markers or partial reverses.
+Restoring from backup is cleaner than reversing in-place edits — the saved file is byte-identical to the original, no chance of leftover markers or partial reverses. The second verification line catches the case where `~/.zshrc` got broken during the test (e.g., a write to the file that didn't go cleanly) — if it shows a parse error, restore from `~/.zshrc.maintainer-backup` again, or fix manually.
 
 ```bash
 # === Chunk C3: handle stale .env after credential rotation ===
@@ -572,6 +614,7 @@ Restoring from backup is cleaner than reversing in-place edits — the saved fil
 
 **Expected end state after Reset C**:
 - Maintainer's working `.env`, `.env.tpl` (with real `op://` refs), Grafana binary, and `~/.zshrc` (with `payrails-claude` function active) all restored.
+- `zsh -i -c 'echo ok'` loads cleanly (no parse errors).
 - Plugin re-installable for daily use; the local-path install is the recommended approach.
 
 ### Critical reset rules
@@ -580,8 +623,9 @@ Restoring from backup is cleaner than reversing in-place edits — the saved fil
 - **Run all uninstall commands regardless of which locations appear clean.** Idempotent commands are safer than conditional ones.
 - **Don't combine literal paths and globs in `rm` (zsh).** Default zsh behavior fails the entire command on a missing-glob match. Use separate `rm` invocations.
 - **Don't `rm -rf ~/.claude/projects/`.** That contains real-usage memory files for unrelated work. Always identify the specific test-folder slug to delete.
-- **Use move-aside, not in-place comment markers, for `~/.zshrc`** during Reset A (Chunk A4). The marker approach makes Claude Code try to "fix" the marker-commented setup.
+- **Use awk block-skip for `~/.zshrc` move-aside in Reset A (Chunk A4).** A line-based `grep -v` filter or in-place comment markers both produce malformed shell config — see the "Why awk block-skip" note in Chunk A4.
 - **Use `zsh -i -c 'type ...'`, not `zsh -c 'type ...'`** for shell-function verification. Non-interactive shells don't source `~/.zshrc`.
+- **Run the pre-test sanity check before Reset A.** A `~/.zshrc` that already has parse errors will produce an even worse result after move-aside.
 
 ### Bootstrap-prompt redaction list (test-only)
 
