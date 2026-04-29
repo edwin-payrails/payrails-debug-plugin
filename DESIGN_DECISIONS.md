@@ -28,6 +28,8 @@ Each decision below documents:
 - If a future skill genuinely depends on being in a specific folder context (e.g., needs to read codebase structure of a particular repo), we'd reconsider whether parts of the plugin should be project-scoped.
 - For now, no skill has that dependency.
 
+**Note on observed nuance**: Project-scope installs have been observed on the maintainer's machine when the plugin is installed via local-directory marketplace, even though GitHub-marketplace installs typically register as user-scope. Whether this is a pattern from one Antigravity version or a stable behavior is unclear. Both scopes work for daily use; the distinction matters for tests where the simulation should match teammate experience.
+
 ---
 
 ## Credential handling: `op inject` outside the agent (not plaintext, not direct `op` calls)
@@ -55,6 +57,7 @@ Each decision below documents:
 **Notes for contributors**:
 - Path A (manual `.env`) is documented as a simpler alternative for testing or quick setup. It's not the default; it's the lighter-weight option.
 - The `.env.tpl` file in the repo uses placeholder `op://` references that each teammate edits to point at their own 1Password vault item. Don't commit `.env` (it's gitignored).
+- Path A has its own security concern in autonomous-install scenarios — see `PLUGIN_LIFECYCLE.md`'s "Path A: heredoc-write hazard" section. Path B avoids this entirely.
 
 ---
 
@@ -194,6 +197,8 @@ Each decision below documents:
 - When `CONTRIBUTING.md` formalizes the contribution flow.
 - When usage volume makes the informal flow burdensome.
 
+**Note on local-path install nuance**: When the maintainer installs the plugin via a local-directory marketplace (pointing at the canonical clone), the runtime appears to reflect canonical edits without an explicit refresh, even though `installPath` shows a cache directory. This means knowledge-update skill writes are visible to running skills and `git diff` will show them in the canonical clone — making them commit-ready directly. The exact mechanism (transparent cache-from-source-on-load, symlinks, or runtime-aware loading) is opaque, but the empirical behavior makes the local-path-install-for-maintainer recommendation work as intended.
+
 ---
 
 ## Two install paths in the README (CLI primary, UI alternative)
@@ -209,6 +214,7 @@ Each decision below documents:
 - Phase 2 testing surfaced that Antigravity's UI marketplace-add doesn't always trigger the install (the plugin doesn't appear in the Plugins tab). The CLI install command is more reliable.
 - CLI is testable autonomously — Claude Code can drive it via its bash tool. UI requires manual clicks. For agent-driven setup, CLI wins.
 - UI is still documented because some users prefer clicking.
+- Updates are also CLI-primary: the UI Plugins-tab toggle-off-on flow has been observed to be unreliable in some Antigravity versions (toggle completes but doesn't pull the new version). `claude plugin update` from the terminal is the working mechanism.
 
 **When to revisit**:
 - If Antigravity adds reliable UI install across all versions, UI could move back to primary.
@@ -237,6 +243,61 @@ Each decision below documents:
 
 ---
 
+## `<plugin-dir>` placeholder over hardcoded paths in the README
+
+**Decision**: When the README needs to reference the plugin directory (for example, in the `payrails-claude` shell function template, or in steps that involve `cd` into the clone), it uses the placeholder `<plugin-dir>` rather than a hardcoded path like `~/Documents/Payrails/payrails-debug-plugin`.
+
+**Alternatives considered**:
+- Hardcode `~/Documents/Payrails/payrails-debug-plugin` (matches the maintainer's setup)
+- Use a different placeholder convention like `$PLUGIN_DIR` or `/path/to/plugin-dir`
+- Have multiple READMEs for different organization styles
+
+**Why `<plugin-dir>`**:
+- Different teammates organize their code differently. Some keep all repos under `~/code`, others under `~/Documents/Work`, others under `~/<project>`. Hardcoding one path breaks the README for everyone whose conventions differ.
+- Angle-bracket placeholders are a universal documentation convention — readers (human or agent) immediately recognize them as "fill this in with your value" rather than literal text.
+- A single placeholder is simpler than maintaining branching docs for different organization styles.
+- Verified to work for both human readers and Claude Code in autonomous-install scenarios. Claude Code substitutes the placeholder with whatever path it picks for its clone, without leaking the maintainer's path expectations into its install.
+
+**Why not just `~/code/payrails-debug-plugin` (a popular convention)**:
+- Same hardcoding problem on a smaller scale. Some teammates don't use `~/code`. Whichever default we pick, someone's convention breaks.
+- The placeholder approach makes "fill this in" explicit rather than burying it in a default that might or might not match.
+
+**When to revisit**:
+- If a strong reason emerges to give a default value alongside the placeholder (some readers find pure placeholders ambiguous about whether *anything* goes there). Could move to `<plugin-dir, e.g. ~/code/payrails-debug-plugin>` style if needed.
+
+**Notes for contributors**:
+- Whenever you add a new README step that references the plugin directory, use `<plugin-dir>` not a literal path. This is a discipline carried forward from v0.1.6.
+- The `payrails-claude` shell function template in the README uses `<plugin-dir>` and `<your-default-workspace>` as two distinct placeholders for two different things — keep them separate.
+
+---
+
+## Move-aside backups over in-place markers for test isolation
+
+**Decision**: When test setup requires temporarily neutralizing a maintainer-machine artifact (such as the `payrails-claude` shell function in `~/.zshrc`), the approach is to back up the file and write a clean modified version, with restoration via `cp` from the backup. *Not* to use in-place comment markers that the test reverses by string match.
+
+**Alternatives considered**:
+- In-place comment markers: prefix the lines being neutralized with a recognizable string (e.g., `# PHASE4_RERUN_COMMENTED_OUT: ...`), so a later reset can `sed` to remove the prefix.
+- Move-aside backups: copy the file to `<file>.maintainer-backup`, write a modified version, restore by copying back.
+
+**Why move-aside (and not in-place markers)**:
+- In-place markers were tried during Phase 4 testing and *backfired*. When Claude Code subsequently inspected `~/.zshrc` (per the README's setup instructions to check for the function's presence), it found the marker-commented function and interpreted it as a "partial setup that needs fixing" — attempting to overwrite the entire commented block with a new active function.
+- Move-aside is unambiguous: the modified file simply doesn't contain the function. Nothing for Claude Code to "fix."
+- Restoration from backup is one command (`cp`) and produces a byte-identical copy of the original. No risk of leftover markers, regex misses, or partial reverses.
+- The in-place approach assumed the marker prefix would be self-evidently "do not touch" — but Claude Code doesn't natively recognize arbitrary prefix conventions and will treat unusual comment patterns as setup anomalies to repair.
+
+**Why not in-place markers**:
+- Even with cleverer marker text (e.g., `# DO_NOT_TOUCH_TEST_BACKUP:`), there's no guarantee Claude Code will respect the marker. It may still try to "improve" what looks like incomplete setup.
+- The marker approach is brittle — it's an attempt to communicate intent through a side-channel that wasn't designed for that. Move-aside removes the entire ambiguity.
+
+**When to revisit**:
+- If a future scenario requires reverting an edit *while* preserving other edits the user made in between (move-aside loses any edits made to the file between Reset A and Reset C). That's not a current concern but could matter for longer-running test cycles.
+
+**Notes for contributors**:
+- This pattern applies to any maintainer-machine artifact that needs to be neutralized for a fresh-teammate test, not just `~/.zshrc`. Same logic for `.env`, `.env.tpl`, the Grafana binary, etc. All of those use move-aside backups in `PLUGIN_LIFECYCLE.md`'s Reset playbooks.
+- The naming convention for backups: `<file>.maintainer-backup`. Distinguishes from `.bak` files left by `sed -i` and similar.
+
+---
+
 ## Documentation philosophy
 
 **Decision**: 
@@ -244,6 +305,7 @@ Each decision below documents:
 - Setup steps live in README.
 - Rationale and internals live in DESIGN_DECISIONS.md (this file) and PLUGIN_LIFECYCLE.md.
 - Conditional prerequisites state the fallback in human language ("if missing, skip and continue").
+- README stays minimal even after security findings or test-mechanic discoveries — those go to PLUGIN_LIFECYCLE.md, not README.
 
 **Why no AI-specific instructions in README**:
 - A well-written human-readable doc is also readable by Claude Code or any agent. That's a side-effect benefit, not the design goal.
@@ -253,7 +315,12 @@ Each decision below documents:
 **Why split into multiple docs**:
 - README is for setup and operational use. A teammate hitting "how do I install this?" or "Grafana shows Failed, what do I check?" should find the answer in README without wading through architectural rationale.
 - DESIGN_DECISIONS.md is for the rare moment someone asks "why was this chosen?" before changing it.
-- PLUGIN_LIFECYCLE.md is for understanding internal mechanics when something behaves unexpectedly.
+- PLUGIN_LIFECYCLE.md is for understanding internal mechanics when something behaves unexpectedly, including test-time guidance for maintainers.
+
+**Why README stays minimal even when new findings would seem to warrant adding to it**:
+- Findings about test mechanics, security observations specific to install paths, or maintainer-only concerns belong in PLUGIN_LIFECYCLE.md or this file, not in the README.
+- Adding such content to README dilutes its purpose (setup-and-use) and makes the user wade through internal concerns that don't apply to most use cases.
+- Examples of findings that explicitly do NOT go to README: Path A's heredoc-write hazard (PLUGIN_LIFECYCLE.md instead), `~/.zshrc` shell function suppressing question-asking in tests (PLUGIN_LIFECYCLE.md), gh multi-account caveats during tests (PLUGIN_LIFECYCLE.md). README's reader is a teammate setting up the plugin for daily use, not a maintainer running test phases.
 
 **When to revisit**:
 - If documentation grows so much that further splits are warranted.

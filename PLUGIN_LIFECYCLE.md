@@ -44,6 +44,8 @@ When the plugin is installed and in use, its state spreads across five locations
 - Created by `claude plugin install payrails-debug@payrails-debug-plugin` (which copies from Location 2 into here).
 - When the plugin is GitHub-installed and a tool like `payrails-knowledge-update` writes a learning, the write goes here. **Edits made here are local and volatile** — they get overwritten on the next version-bump cache refresh.
 
+**`installPath` semantic nuance**: The `installPath` field in `~/.claude/plugins/installed_plugins.json` always references this cache path, regardless of whether the install came from a GitHub marketplace or a local-directory marketplace. However, observation suggests that for local-directory marketplaces, the runtime source-of-truth for skill content is effectively the canonical clone (Location 1) — edits to files in Location 1 are visible to running skills without an explicit refresh. The mechanism (transparent cache-from-source-on-load, symlinks, or runtime-aware loading) is opaque, but the empirical behavior is what matters for the maintainer rule about local-path installs.
+
 ### Location 4 — Process memory
 
 **What it is**: The Antigravity process itself, and the env vars it inherits at startup. Once the plugin is loaded into the Antigravity process, it stays there in memory until the process quits.
@@ -119,7 +121,7 @@ This is by design, not a bug — but it surprises people. When the plugin is ins
 
 To make a learning flow back to all teammates, someone with repo access has to promote the change: copy from Location 3 to a maintainer's Location 1, commit, push. From there, normal update flow distributes it.
 
-For active development where this matters, install the plugin via local-path (pointing at Location 1 directly) instead of from GitHub — that way the knowledge-update skill writes to the canonical clone, and the maintainer just commits and pushes when ready.
+For active development where this matters, install the plugin via local-path (pointing at Location 1 directly) instead of from GitHub — that way the knowledge-update skill writes are reflected in the canonical clone, and the maintainer just commits and pushes when ready.
 
 ### "Marketplace already on disk" message during install
 
@@ -132,6 +134,16 @@ The checkmark indicates this is a success message, not an error. The command did
 The phrasing is genuinely confusing on first read because "already on disk — declared in user settings" sounds like a stale-state warning. It isn't. It's the CLI's way of saying "this is already done." If you (or Claude Code, in autonomous-install scenarios) are re-running marketplace-add for any reason — retrying after a partial install, scripting an idempotent setup, etc. — this message is the expected output and you can proceed.
 
 If you actually want a fresh marketplace state (because something is genuinely broken), follow the Complete uninstall sequence below — `claude plugin marketplace remove payrails-debug-plugin` is the command that clears the registration, after which a fresh `marketplace add` will print the first-install confirmation message instead.
+
+### `op inject` fails with "invalid secret reference 'op://': too few '/'"
+
+This error comes from `op inject` finding either malformed `op://` references or unfilled placeholders in `.env.tpl`.
+
+Possible causes:
+1. **Comment lines containing `op://` substrings**: fixed in v0.1.6, where comment lines like `# Path format: vault-name/item-name/field-name` no longer contain literal `op://`. If you see this error on a current `.env.tpl`, ensure your local copy hasn't been modified.
+2. **Unfilled angle-bracket placeholders**: the committed `.env.tpl` has lines like `op://<your-vault>/<your-grafana-item>/username`. Until each user replaces those with their real 1Password references (e.g., `op://Private/Edwin Grafana/username`), `op inject` will fail because there's no actual vault literally named `<your-vault>`. This is the expected first-run state for a fresh teammate; the README documents the fill-in step.
+3. **Maintainer's `.env.tpl` was reverted to committed state**: the maintainer typically edits `.env.tpl` once with their real `op://` references for daily use. If a Reset C playbook included `git checkout .env.tpl`, it reverts to placeholders and breaks the maintainer's daily flow. See "Testing the plugin → Reset playbooks → Reset C" below for the corrected approach.
+4. **Maintainer prepared a commit and reverted `.env.tpl` to committed state**: same mechanism as cause 3, different trigger. Whenever the maintainer pushes a PR, they need `.env.tpl` in committed (placeholder) state so the maintainer's personal `op://` references don't get committed to the public repo. After the merge, daily use needs the real refs back. See the "Maintainer commit cycle" subsection below for the documented before/after sequence.
 
 ---
 
@@ -251,15 +263,87 @@ Refresh via UI: Manage Plugins → Marketplaces tab → click the refresh icon n
 
 The actual installed plugin code at Location 3. Updating this cache copies the latest version from the marketplace cache into a new versioned subfolder.
 
-Update via UI: Manage Plugins → Plugins tab → toggle off and on (this triggers re-installation from the marketplace).
+Update via UI: Manage Plugins → Plugins tab → toggle off and on (this triggers re-installation from the marketplace). **Note**: this UI toggle path has been observed to be unreliable in some Antigravity versions — the toggle completes but doesn't actually pull the new version. The CLI command below is more reliable.
 
-Update via CLI: `claude plugin update payrails-debug@payrails-debug-plugin`.
+Update via CLI: `claude plugin update payrails-debug@payrails-debug-plugin`. **This is the recommended primary mechanism.**
 
 ### Why it's a two-step
 
 If only the plugin cache is refreshed but the marketplace cache is stale, the system thinks "I'm already at the latest." If only the marketplace cache is refreshed but the plugin cache isn't updated, the user keeps running the old version even though a new one is known to exist.
 
-When a maintainer pushes a new version, teammates need both: refresh marketplace first (to learn about the new version), then update plugin (to actually pick it up). The UI refresh icon does both in one click; the CLI requires running both commands explicitly.
+When a maintainer pushes a new version, teammates need both: refresh marketplace first (to learn about the new version), then update plugin (to actually pick it up). The UI refresh icon does both in one click for the marketplace cache; the plugin cache then needs the CLI update command to actually install the new version.
+
+---
+
+## Path A (manual `.env`): heredoc-write hazard
+
+When following Path A's manual credential setup, Claude Code in autonomous-install scenarios typically writes the `.env` file using a heredoc:
+
+```bash
+cat > ~/.claude/plugins/marketplaces/payrails-debug-plugin/.env << 'EOF'
+GRAFANA_USERNAME="actual.username"
+GRAFANA_PASSWORD="actual-password-value-shown-in-cleartext"
+EOF
+```
+
+The heredoc body — including the actual credential values being written — is visible in Claude Code's chat output by default. The values appear in the conversation transcript and in any screenshots taken of the install flow.
+
+This is a real leak risk:
+- Anyone who later reads the conversation sees the credentials.
+- Screenshots of the install flow may end up shared in tickets, demo recordings, or pasted into other conversations.
+- The credentials persist in the conversation history even after they've been "used."
+
+**For maintainers running Path A tests**: assume the heredoc will be visible. Treat any credentials used during a Path A test as potentially-leaked, rotate them after the test, and avoid sharing screenshots of the install flow without redaction.
+
+**For end users following Path A on their own machine**: the heredoc is visible in your local Claude Code session, which is less of a concern since you're the only viewer. But if you share that session (export, screenshot, or pair-driving), the credentials go with it.
+
+**Why Path A specifically**: Path B (op-inject) avoids this hazard entirely. The `op inject` step writes from 1Password references that themselves aren't secrets — only the resolved values, written to disk via `op inject`'s own redaction-aware mechanics, contain secrets. The agent never has the values in its own output.
+
+**Mitigation pending in v0.1.7+**: Path A's documented install flow could be reworked to write the `.env` via a method that doesn't echo to chat — e.g., prompting the user to type credentials into a `read -s` prompt outside Claude Code's view, or providing a `.env.example` and instructing the user to manually populate it.
+
+---
+
+## Maintainer commit cycle: `.env.tpl` revert before push, restore after merge
+
+The maintainer keeps a working `.env.tpl` with their own real `op://` references (e.g., `op://Private/Edwin Grafana/username`) so the daily-use shell function `payrails-claude` produces a working `.env` from `op inject`. The committed `.env.tpl` in the repo, on the other hand, must keep generic placeholder text (`op://<your-vault>/<your-grafana-item>/username`) so teammates see what to fill in for their own setup.
+
+This creates a tension that the maintainer must manage manually around any commit:
+
+1. **Daily state**: `.env.tpl` has the maintainer's real `op://` refs. `payrails-claude` works.
+2. **Before a commit/PR**: revert `.env.tpl` to the committed (placeholder) state. Otherwise `git status` shows it as modified, the modification would be staged, and the maintainer's personal vault references would land in a public-to-collaborators commit.
+3. **During the commit/PR**: only commit the intended changes. `.env.tpl` should not appear in `git diff --stat`.
+4. **After the merge**: re-apply the maintainer's real refs so daily use works again.
+
+### Before a commit — revert to committed state
+
+```bash
+cd ~/Documents/Payrails/payrails-debug-plugin
+git checkout .env.tpl
+git status
+```
+
+`.env.tpl` should no longer appear under "Changes not staged for commit." If you forgot to do this and `.env.tpl` is in your staged changes, unstage it (`git restore --staged .env.tpl`) and then revert.
+
+If you discover after pushing that `.env.tpl` was accidentally committed with maintainer-real refs, you'll need to push a follow-up commit reverting it (`git checkout` from the previous-good main, commit, push) and consider whether the personal references need rotation. Real `op://` paths aren't credentials by themselves (they're pointers to 1Password, not secrets), but they do leak personal vault structure that the maintainer may prefer to keep private.
+
+### After the merge — restore real refs
+
+```bash
+cd ~/Documents/Payrails/payrails-debug-plugin
+sed -i.bak 's|op://<your-vault>/<your-grafana-item>/username|op://<MAINTAINER_VAULT>/<MAINTAINER_ITEM>/username|' .env.tpl
+sed -i.bak 's|op://<your-vault>/<your-grafana-item>/password|op://<MAINTAINER_VAULT>/<MAINTAINER_ITEM>/password|' .env.tpl
+rm -f .env.tpl.bak
+```
+
+Replace `<MAINTAINER_VAULT>` and `<MAINTAINER_ITEM>` with the maintainer's actual values (e.g., `Private/Edwin Grafana`). Verify with `cat .env.tpl` — lines 9 and 10 should now have the real refs back.
+
+After the restore, `git status` will show `.env.tpl` as modified again. That's the maintainer's personal working state and should NOT be committed — the next commit cycle starts again with another `git checkout .env.tpl` before pushing.
+
+### Long-term simpler approach (deferred)
+
+The fundamental fix to this back-and-forth is a `.env.tpl.local` pattern: a gitignored sibling file that holds the maintainer's real refs, with `payrails-claude` checking for it first and falling back to `.env.tpl` if absent. That eliminates the tension entirely — `.env.tpl` stays at committed (placeholder) state always, and the maintainer's real refs live separately in a never-committed file.
+
+This is a real architectural change (changes to the shell function template, gitignore, and the documented setup flow) and is captured in BUILD_HANDOFF as a v0.1.7+ candidate.
 
 ---
 
@@ -289,34 +373,232 @@ For real-teammate use this behavior is fine — useful, even, since it carries l
 
 If the test launches Antigravity from `$HOME` (which is the cleanest way to simulate a teammate not having any project context yet), Claude Code creates an entry under `~/.claude/projects/-Users-<username>/memory/` — treating `$HOME` as a project. This is harmless but unusual; the directory will accumulate memory files until explicitly cleaned.
 
-### Cleaning up after a test run
+### Behavior: Antigravity restores the last-open folder on launch
 
-After completing an autonomous-install test, remove the memory files Claude Code created. The exact paths depend on which folder Antigravity was launched from:
+When Antigravity is launched fresh (after Cmd+Q), it doesn't open with a blank welcome screen — it restores whichever folder was last open. For maintainer use this is convenient. For fresh-teammate tests it's a contamination: the launched Antigravity has a folder context that a fresh teammate wouldn't have.
+
+**Fix during tests**: after Antigravity launches, use Cmd+Shift+N to open a new no-folder window before starting the Claude Code session. Confirm by checking the window title or breadcrumb — it should not show any project name.
+
+### Behavior: maintainer's `payrails-claude` shell function suppresses Claude Code's question-asking
+
+The recommended teammate setup includes a `payrails-claude` shell function in `~/.zshrc` that automates the daily-use launch sequence. For maintainer daily use, this function is essential.
+
+For fresh-teammate-simulation tests, the function's *presence* changes Claude Code's behavior in a subtle and important way: when Claude Code inspects `~/.zshrc` during the install flow (to check if the function exists per the README's setup), it sees a function that points at the maintainer's clone path. Claude Code then:
+
+1. Discovers the maintainer's canonical clone exists at the path the function references.
+2. May try to consolidate its install into that existing clone instead of using its own newly-created clone.
+3. *Doesn't ask the README's natural setup questions* (vault item name, default workspace, etc.) because it sees an existing setup pattern and infers continuity.
+
+In testing, removing the function (commenting out / move-aside, see Reset playbooks) noticeably changed Claude Code's behavior in the next run — it began asking the questions the README's setup flow expects, and stopped trying to consolidate into the maintainer clone.
+
+This means: any fresh-teammate test where the `payrails-claude` function is active is not a true fresh-teammate simulation. The function must be neutralized during Reset A and restored in Reset C.
+
+### Behavior: gh multi-account state confuses Claude Code
+
+If the maintainer has multiple `gh` accounts authenticated (e.g., `EdwinSamuel7` for teammate-simulation and `edwin-payrails` as the actual repo owner), `gh auth status` shows both accounts. Claude Code reads this and reasons about which account to use — sometimes attempting to switch accounts even when the active account already has the necessary access.
+
+A real teammate would only have one `gh` account; the multi-account state is a maintainer-machine artifact.
+
+**Fix during tests**: include explicit guidance in the bootstrap prompt:
+
+> Don't switch gh accounts. Use whichever account is currently active — it already has the access we need.
+
+### Reset playbooks
+
+There are three reset scenarios. Run the one that matches your situation. They're explicit because mixing them up is how locations get out of sync.
+
+#### Reset A — Pre-test (bring machine to fresh-teammate state)
+
+**When to run**: Before starting any fresh-teammate-simulation test phase.
+
+**Cleans**: plugin install state (Locations 2, 3, 5), maintainer `.env` and `.env.tpl` (move-aside backups), Grafana binary, `/tmp` Grafana artifacts, `~/.zshrc` shell function (move-aside backup, NOT in-place comment markers).
 
 ```bash
+# === Chunk A1: plugin uninstall + filesystem + registration ===
+claude plugin uninstall payrails-debug@payrails-debug-plugin
+rm -rf ~/.claude/plugins/cache/payrails-debug-plugin/
+rm -rf ~/.claude/plugins/marketplaces/payrails-debug-plugin/
+claude plugin marketplace remove payrails-debug-plugin
+
+echo "--- verify chunk A1 ---"
+cat ~/.claude/plugins/installed_plugins.json | grep -i payrails-debug || echo "INSTALLED_PLUGINS_CLEAN"
+cat ~/.claude/settings.json | python3 -c "import json,sys; d=json.load(sys.stdin); ekm=d.get('extraKnownMarketplaces', {}); print('PAYRAILS_REGISTRATION_PRESENT' if 'payrails-debug-plugin' in ekm else 'EXTRA_KNOWN_MARKETPLACES_CLEAN')"
+ls -la ~/.claude/plugins/cache/ 2>/dev/null | grep -i payrails || echo "CACHE_FOLDER_CLEAN"
+ls -la ~/.claude/plugins/marketplaces/ 2>/dev/null | grep -i payrails || echo "MARKETPLACE_FOLDER_CLEAN"
+```
+
+```bash
+# === Chunk A2: maintainer state move-aside (.env, .env.tpl, Grafana binary) ===
+mv ~/Documents/Payrails/payrails-debug-plugin/.env ~/Documents/Payrails/payrails-debug-plugin/.env.maintainer-backup 2>/dev/null
+cp ~/Documents/Payrails/payrails-debug-plugin/.env.tpl ~/Documents/Payrails/payrails-debug-plugin/.env.tpl.maintainer-backup
+mv ~/tools/mcp-grafana-official ~/tools/mcp-grafana-official.bak 2>/dev/null
+```
+
+The `.env.tpl` is *copied* (not moved) to a backup because the maintainer's working `.env.tpl` typically has real `op://` references that they need restored after the test. The committed `.env.tpl` has placeholder text; reverting via `git checkout` would break the maintainer's daily flow. The backup-restore mechanic preserves both the test's needs (test runs against committed-state `.env.tpl`, which the live file already matches) and the maintainer's daily-use state (restored in Reset C).
+
+```bash
+# === Chunk A3: /tmp cleanup ===
+rm -f /tmp/mcp-grafana.tar.gz
+rm -rf /tmp/mcp-grafana
+rm -f /tmp/darwin.arm64.grafana.tar.gz
+rm -f /tmp/darwin.x64.grafana.tar.gz
+
+echo "--- verify chunk A3 ---"
+ls -la /tmp/ 2>/dev/null | grep -E "grafana|darwin" || echo "TMP_FULLY_CLEAN"
+```
+
+`/tmp` accumulates Grafana install artifacts across sessions under multiple naming patterns (`mcp-grafana.tar.gz`, `darwin.arm64.grafana.tar.gz`, sometimes a `mcp-grafana` directory from extraction). Stale artifacts cause confusion — `tar` overwrites existing extractions silently, making it ambiguous which binary ended up at the destination. Each `rm` is a separate command rather than combined: zsh's default behavior fails the entire command line on a missing-glob match, so chained globs can halt before processing literal paths.
+
+```bash
+# === Chunk A4: ~/.zshrc handling — move-aside, NOT in-place markers ===
+cp ~/.zshrc ~/.zshrc.maintainer-backup
+grep -v "payrails-claude" ~/.zshrc.maintainer-backup | grep -v "payrails-debug" > ~/.zshrc.tmp
+mv ~/.zshrc.tmp ~/.zshrc
+
+echo "--- verify chunk A4 ---"
+zsh -i -c 'type payrails-claude' 2>&1 | head -3
+ls -la ~/.zshrc ~/.zshrc.maintainer-backup
+```
+
+Note the verification uses `zsh -i -c` (interactive) not `zsh -c`. Non-interactive shells don't source `~/.zshrc`, so `zsh -c 'type payrails-claude'` returns "not found" regardless of whether the function is defined. Use the `-i` flag for an actual test of whether the function is loaded in a real shell.
+
+**Why move-aside instead of in-place comment markers**: an earlier approach commented out the function block in place using marker prefixes (e.g., `# PHASE4_RERUN_COMMENTED_OUT: ...`). When Claude Code subsequently inspected `~/.zshrc`, it found the marker-commented function and interpreted it as a "partial setup that needs fixing" — attempting to overwrite the entire commented block with a new active function. Move-aside (writing a clean file without the function entirely, keeping the original at `.maintainer-backup`) is unambiguous: there's nothing for Claude Code to "fix."
+
+```bash
+# === Chunk A5: GitHub access + Antigravity quit (browser/dock, not terminal) ===
+# 5a: From maintainer's edwin-payrails browser session:
+#     https://github.com/edwin-payrails/payrails-debug-plugin/settings/access
+#     Remove the teammate-identity collaborator if present, then re-add as Read-only collaborator.
+# 5b: From teammate-identity browser session: accept the invite.
+# 5c: Cmd+Q Antigravity (right-click dock icon → Quit, verify icon disappears).
+```
+
+**Expected end state after Reset A**:
+- Plugin uninstalled, all five locations clean
+- Maintainer `.env` and `.env.tpl` backed up; live `.env.tpl` matches committed (placeholder) state
+- `~/tools/`: `mcp-grafana-bin` (Syed's fork compiled, untouched), `mcp-grafana/` (Syed's fork source, untouched), `mcp-grafana-official.bak`, no plain `mcp-grafana-official`
+- `/tmp/`: no `mcp-grafana*` or `darwin*` files
+- `~/.zshrc`: no `payrails-claude` function active; backup at `~/.zshrc.maintainer-backup`
+- Teammate-identity `gh` account has fresh accepted repo invite
+- Antigravity not running
+
+#### Reset B — Post-test (clean test artifacts)
+
+**When to run**: After each test phase wraps, regardless of success or failure.
+
+```bash
+# === Chunk B1: plugin uninstall + filesystem + registration (same as A1) ===
+claude plugin uninstall payrails-debug@payrails-debug-plugin
+rm -rf ~/.claude/plugins/cache/payrails-debug-plugin/
+rm -rf ~/.claude/plugins/marketplaces/payrails-debug-plugin/
+claude plugin marketplace remove payrails-debug-plugin
+```
+
+```bash
+# === Chunk B2: clean test clone folders, /tmp, Grafana binary ===
+rm -rf ~/code/payrails-debug-plugin                   # Path B's typical autonomous-install clone folder
+rm -rf ~/Documents/phase4_plugin_test/                # if a specific test folder was created
+rm -rf /tmp/mcp-grafana
+rm -f /tmp/mcp-grafana.tar.gz
+rm -f /tmp/darwin.arm64.grafana.tar.gz
+rm -f /tmp/darwin.x64.grafana.tar.gz
+mv ~/tools/mcp-grafana-official ~/tools/mcp-grafana-official.bak.tmp 2>/dev/null
+```
+
+```bash
+# === Chunk B3: project-scoped memory file cleanup ===
 find ~/.claude/projects -name "user_role.md" -o -name "project_payrails*.md" -o -name "MEMORY.md" 2>/dev/null
+# Review output. Memory files with timestamps from the test run are candidates for removal.
+# Memory files with older timestamps are pre-existing real usage — leave alone.
+# Likely path for a $HOME-launched test: ~/.claude/projects/-Users-<username>/memory/
+# DON'T blanket-delete ~/.claude/projects/ — it contains real-usage memory for unrelated work.
 ```
-
-Review the output. Memory files with timestamps from the test run are candidates for removal. Memory files with older timestamps are pre-existing real usage and should be left alone — distinguish before deleting.
-
-To remove the test-run files, the typical pattern is to delete the entire `memory/` subfolder under whichever launch-folder slug was created during the test:
 
 ```bash
-rm -rf ~/.claude/projects/-Users-<username>/memory/
+# === Chunk B4: Antigravity Cmd+Q ===
+# Right-click dock icon → Quit, verify dock icon disappears.
 ```
 
-Use the path from the `find` output above. Don't blanket-delete `~/.claude/projects/` — that has unrelated session transcripts and other plugins' state.
+After Reset B, run Reset C to restore maintainer state.
+
+#### Reset C — Maintainer state restore (after any test phase, before resuming daily use)
+
+**When to run**: After a test phase ends, before resuming daily debugging work.
+
+```bash
+# === Chunk C1: restore maintainer .env, .env.tpl, Grafana binary ===
+mv ~/Documents/Payrails/payrails-debug-plugin/.env.maintainer-backup ~/Documents/Payrails/payrails-debug-plugin/.env 2>/dev/null
+cp ~/Documents/Payrails/payrails-debug-plugin/.env.tpl.maintainer-backup ~/Documents/Payrails/payrails-debug-plugin/.env.tpl
+rm -f ~/Documents/Payrails/payrails-debug-plugin/.env.tpl.maintainer-backup
+mv ~/tools/mcp-grafana-official.bak ~/tools/mcp-grafana-official 2>/dev/null
+rm -f ~/tools/mcp-grafana-official.bak.tmp* 2>/dev/null
+
+echo "--- verify chunk C1 ---"
+ls -la ~/Documents/Payrails/payrails-debug-plugin/.env* 2>/dev/null
+ls -la ~/tools/ | grep -i grafana
+~/tools/mcp-grafana-official --version 2>&1 | head -3
+```
+
+The `.env.tpl` is restored from backup (not via `git checkout`) so the maintainer's daily-use real `op://` references come back. `git checkout` would revert to committed (placeholder) state and break the next `payrails-claude` invocation.
+
+```bash
+# === Chunk C2: restore ~/.zshrc from backup ===
+cp ~/.zshrc.maintainer-backup ~/.zshrc
+rm -f ~/.zshrc.maintainer-backup
+
+echo "--- verify chunk C2 ---"
+zsh -i -c 'type payrails-claude' 2>&1 | head -3
+wc -l ~/.zshrc
+```
+
+Restoring from backup is cleaner than reversing in-place edits — the saved file is byte-identical to the original, no chance of leftover markers or partial reverses.
+
+```bash
+# === Chunk C3: handle stale .env after credential rotation ===
+# If any credential was rotated during the test (per Path A's heredoc-write hazard or any other reason),
+# the restored .env is now stale. Best to delete it and let payrails-claude regenerate via op inject.
+# rm -f ~/Documents/Payrails/payrails-debug-plugin/.env
+# Then on next payrails-claude invocation, op inject will write a fresh .env from current 1Password values.
+```
+
+```bash
+# === Chunk C4: re-install plugin for daily use (optional) ===
+# If maintainer wants the plugin live for daily debugging:
+# Local-path install (recommended per maintainer rule — see "Plugin install paths" in main doc):
+#   claude plugin marketplace add ~/Documents/Payrails/payrails-debug-plugin
+#   claude plugin install payrails-debug@payrails-debug-plugin
+# OR via Antigravity UI: /manage-plugins → Marketplaces → Add → enter directory path → Add → toggle on.
+```
+
+**Expected end state after Reset C**:
+- Maintainer's working `.env`, `.env.tpl` (with real `op://` refs), Grafana binary, and `~/.zshrc` (with `payrails-claude` function active) all restored.
+- Plugin re-installable for daily use; the local-path install is the recommended approach.
+
+### Critical reset rules
+
+- **Always run Reset C after Reset B.** Reset B leaves the maintainer in a partially-cleaned state; only Reset C makes the maintainer's setup whole.
+- **Run all uninstall commands regardless of which locations appear clean.** Idempotent commands are safer than conditional ones.
+- **Don't combine literal paths and globs in `rm` (zsh).** Default zsh behavior fails the entire command on a missing-glob match. Use separate `rm` invocations.
+- **Don't `rm -rf ~/.claude/projects/`.** That contains real-usage memory files for unrelated work. Always identify the specific test-folder slug to delete.
+- **Use move-aside, not in-place comment markers, for `~/.zshrc`** during Reset A (Chunk A4). The marker approach makes Claude Code try to "fix" the marker-commented setup.
+- **Use `zsh -i -c 'type ...'`, not `zsh -c 'type ...'`** for shell-function verification. Non-interactive shells don't source `~/.zshrc`.
 
 ### Bootstrap-prompt redaction list (test-only)
 
 When prompting Claude Code to drive an install autonomously, include an explicit list of files whose contents must not be printed back to the test driver. The minimum list:
 
-- `.env`
+- `.env` (any file matching `.env.*` other than `.env.tpl`)
 - `~/.claude/settings.json`
 - 1Password CLI output
 - `~/.zshrc`
 
 The first three are obvious; the fourth is the one that's easy to miss. During an install, Claude Code naturally runs `tail ~/.zshrc` or `cat ~/.zshrc` to verify whether the optional shell function is already present. If the user has plaintext credentials exported in `.zshrc` (e.g., `export ANTHROPIC_API_KEY=...`), those values appear in stdout and risk being captured in screenshots or transcripts. Add `~/.zshrc` to the redaction list to prevent this — instruct Claude Code to use existence-only checks (e.g., `grep -n "payrails-claude" ~/.zshrc` rather than `tail ~/.zshrc`).
+
+In addition to the redaction list, include this guidance:
+
+> Don't switch gh accounts during the install. Use whichever account is currently active — it already has the access needed.
+
+This prevents Claude Code from acting on the multi-account state that some maintainer machines have and that real teammates wouldn't have.
 
 ### Optional: instruct Claude Code not to write memory files
 
