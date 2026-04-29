@@ -75,10 +75,18 @@ Loki logs are structured JSON with rich labels, making merchant-scoped queries f
 
 If the SE hasn't specified the environment, ask before querying. Results from the wrong environment are misleading and waste time.
 
-**Staging:** All merchants share a single `staging` Kubernetes namespace. Filter by `namespace`:
-```
-{namespace="staging", app="backend"} |= "<execution-or-payment-id>"
-```
+**Staging:** Two approaches — try them in order.
+
+1. **`namespace="staging"` approach** (original guidance):
+   ```
+   {namespace="staging", app="backend"} |= "<execution-or-payment-id>"
+   ```
+
+2. **`namespace="rc-backend"` approach** (confirmed working Apr 2026 — try this if approach 1 returns zero results):
+   ```
+   {namespace="rc-backend"} |= "<execution-or-payment-id>"
+   ```
+   `rc-backend` is the actual Loki namespace observed for staging (the `staging` namespace was absent from `list_loki_label_values` output in Apr 2026). The `app="backend"` label is not required when using this namespace. The `rc-` prefix is consistent with the staging API base URL (`rc-api.staging.payrails.io`).
 
 **Production:** Two approaches — try them in order. Which works depends on how that merchant is deployed.
 
