@@ -1,10 +1,13 @@
 # Resolved environment file from op inject — never commit
 .env
 
-# Build process artifacts — internal use only, not for public plugin
-BUILD_CONTEXT.md
-BUILD_PLAN.md
-BUILD_PROGRESS.md
+# Build / handoff docs — maintainer-internal, not for public plugin
+BUILD_HANDOFF.md
+debug-transition-context.md
+debugging-setup-briefing.md
+
+# Maintainer navigation aid — auto-loaded by Claude Code, gitignored to stay maintainer-only
+CLAUDE.local.md
 
 # macOS
 .DS_Store
