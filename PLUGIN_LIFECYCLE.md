@@ -305,6 +305,8 @@ This is a real leak risk:
 
 ## Maintainer commit cycle: `.env.tpl` revert before push, restore after merge
 
+> The **full release flow** (branch → bump → commit → PR → merge → distribute) and the **rollback playbook** live in `GIT_WORKFLOW.md`. This section is the `.env.tpl` *mechanics* used within that flow (finding #14).
+
 The maintainer keeps a working `.env.tpl` with their own real `op://` references (e.g., `op://Private/Edwin Grafana/username`) so the daily-use shell function `payrails-claude` produces a working `.env` from `op inject`. The committed `.env.tpl` in the repo, on the other hand, must keep generic placeholder text (`op://<your-vault>/<your-grafana-item>/username`) so teammates see what to fill in for their own setup.
 
 This creates a tension that the maintainer must manage manually around any commit:
@@ -423,6 +425,8 @@ If the output shows a parse error (e.g., `parse error near '}'`), `~/.zshrc` is 
 If the sanity check fails, fix `~/.zshrc` first (or restore from a known-good backup) before proceeding.
 
 ### Reset playbooks
+
+> **Reset A/B/C are for *testing* a clean install — they are NOT part of a push/release.** A normal release never runs them; the only per-push "reset" is the `.env.tpl` revert/restore in the Maintainer commit cycle above. For the release/push flow, see `GIT_WORKFLOW.md`.
 
 There are three reset scenarios. Run the one that matches your situation. They're explicit because mixing them up is how locations get out of sync.
 

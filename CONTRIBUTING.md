@@ -49,7 +49,7 @@ If you have GitHub access to the plugin repo and want to make a change yourself:
 1. Clone or pull the repo locally.
 2. Branch off `main`: `git checkout -b <prefix>/<short-description>` (use `fix/`, `feat/`, `docs/`, or `chore/` prefixes).
 3. Make your change.
-4. Bump the plugin version in `.claude-plugin/plugin.json` if your change affects plugin behavior (any code, skill, or MCP change). Pure-documentation changes can skip the bump while no teammates are using the plugin actively; once teammates have installed, bump on every change.
+4. Bump the plugin version in `.claude-plugin/plugin.json` if your change touches a **runtime asset** (skills, references, `.mcp.json`, `mcp-servers/`, `.claude-plugin/`). Repo-only docs don't need a bump — see **Versioning** below, and `GIT_WORKFLOW.md` for the full release + rollback flow.
 5. Open a PR with a clear description.
 6. Once merged, teammates need to refresh their plugin to pick up the change — see the README's update section.
 
@@ -59,12 +59,14 @@ Open an issue or thread first to discuss the design. New skills affect plugin sc
 
 ### Versioning
 
-The plugin uses semver:
-- Patch (0.1.X → 0.1.Y): bug fixes, README updates, troubleshooting additions.
+The plugin uses semver (`MAJOR.MINOR.PATCH`):
+- Patch (0.3.X → 0.3.Y): bug fixes, skill/reference content fixes, Temporal bundle syncs, troubleshooting additions.
 - Minor (0.X.0 → 0.Y.0): new features (new MCPs, new skills).
 - Major (X.0.0 → Y.0.0): breaking changes.
 
-Currently the plugin is in pre-1.0 (0.1.X) territory.
+Currently the plugin is in pre-1.0 (0.3.X) territory.
+
+**Bump only when a runtime asset changes** — `skills/` (including `references/`), `.mcp.json`, `mcp-servers/`, or `.claude-plugin/`. Repo-only docs the plugin never loads (`README.md`, `CONTRIBUTING.md`, `GIT_WORKFLOW.md`, `DESIGN_DECISIONS.md`, `PLUGIN_LIFECYCLE.md`) don't need a bump. The full release + rollback flow lives in `GIT_WORKFLOW.md`.
 
 ---
 
