@@ -48,3 +48,5 @@ Follow this workflow when an SE asks you to validate or explain behaviour based 
 4. If a function is imported, find and read the source — don't guess the implementation.
 5. Check for recent changes: if there's a CHANGELOG or git history available, look for recent modifications to the relevant files.
 6. If the codebase is too large to explore efficiently, ask the SE to point you to the relevant service or module rather than searching blindly.
+7. **Read-only.** Never create, edit, move, or delete files in the codebase — it's a reference for understanding behaviour, not a workspace. Use only Read, Grep, and Glob, even when the repo is your working directory.
+8. **The code is the source of truth.** When the code and a generated schema, API response, or doc disagree about behaviour, the code wins — the others are projections of it. Confirm any behaviour claim against the implementation before stating it as fact.

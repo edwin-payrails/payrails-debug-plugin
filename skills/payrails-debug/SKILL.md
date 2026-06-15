@@ -46,7 +46,7 @@ Use them proactively — always search or check directly before guessing.
    - **Production:** Use the merchant's user name as the namespace.
 
    If the SE has not specified the environment, ask before querying Grafana. Never query without the correct namespace — results from the wrong environment are misleading and waste time.
-11. **Temporal** — For workflow execution state, history, and payload decryption. Read `references/temporal.md` for access patterns, namespace format, query examples, and codec decryption.
+11. **Temporal** (via the bundled `temporal` MCP server) — For workflow execution state, history, and payload decryption. Use the `temporal` MCP tools — start with `get_execution` when you have a payment execution ID. Read `references/temporal.md` for the tool list, namespace format, and codec details.
 12. **Provider-specific references** — Check `references/providers/` for the relevant PSP when debugging provider-specific issues. Currently contains `gpay.md` (Google Pay tokenisation failures); check the folder for other PSPs (Adyen, Stripe, Checkout.com) as they're added.
 
 ---
@@ -73,7 +73,7 @@ Before you analyse anything, search in this order:
 1. `references/payrails-knowledge.md` — for matching error codes, endpoints, or symptoms
 2. **Notion — Merchant Debugging Patterns database** (data source ID `1c7d9858-959a-4ca9-b1f1-30cfd6c7ad26`) — the team's KB of resolved debugging patterns. Query by Product area, PSP, Payment method, Article type, or search the Problem Summary field. This is where prior sessions have documented similar patterns; always check here before continuing.
 3. **Grafana** (if available and the SE has provided an execution ID or payment ID) — query Loki logs for the specific ID. Specify the namespace: `staging` for staging, or the merchant's user name for production. See `references/grafana.md` for query details and the wider set of Grafana uses during debugging. Transaction-level log lookup often gives you the answer immediately.
-4. **Temporal** (if the SE has provided a Payrails execution ID) — query the merchant's Temporal namespace for the workflow state. See `references/temporal.md` for query patterns. Like Grafana, this often reveals the answer immediately when the execution ID is known.
+4. **Temporal** (if the SE has provided a Payrails execution ID) — use the `temporal` MCP server's `get_execution` tool to fetch the workflow state, history, and decoded payloads in one call. See `references/temporal.md` for the full tool set. Like Grafana, this often reveals the answer immediately when the execution ID is known.
 5. **Linear** — for existing tickets about this issue
 6. **Slack** — for prior conversations (search for error codes, merchant names, component names)
 7. **Notion — broader search** — for runbooks or post-mortems outside the Debugging Patterns database
@@ -101,9 +101,9 @@ Form 2–3 hypotheses ranked by likelihood. For each:
 
 - **For logs or traces of a specific execution or payment ID:** use the Grafana MCP with the correct namespace (`staging` for staging, merchant user name for production). For broader Grafana-based investigation (PSP health as a last-resort hypothesis, metric-based performance checks, dashboard exploration), see `references/grafana.md` for the full set of patterns. When only transaction-level lookup is needed, Loki log queries are the direct path.
 
-- **For Temporal workflow state, execution history, or payload decryption:** use the patterns in `references/temporal.md`.
+- **For Temporal workflow state, execution history, or payload decryption:** use the `temporal` MCP tools (`get_execution` is the default when an execution ID is known); see `references/temporal.md`.
 
-- **For Payrails codebase behaviour:** use the workflow in `references/codebase-workflow.md`.
+- **For Payrails codebase behaviour:** use the workflow in `references/codebase-workflow.md`. When you're about to assert how a connector or endpoint behaves (enum values, defaults, when a field is sent, what it maps to), treat the **source code as the authoritative answer** — the API response or generated schema is a derived view, so confirm against the code before stating it as fact.
 
 Only ask the SE to check something manually if it genuinely cannot be accessed via API, Grafana, Temporal, or the codebase — e.g., PSP dashboards (Adyen Customer Area, Stripe Dashboard), human-only approval flows, or anything that requires credentials the SE has but you don't.
 
@@ -209,10 +209,10 @@ If the output's "Follow-up communications needed" section flags that a merchant 
 
 1. **Search before answering. Always.** The knowledge reference, Merchant Debugging Patterns KB, Slack, Linear, and Notion collectively contain most answers.
 2. **Check directly before asking.** If something can be fetched via API, Grafana, Temporal, or the codebase, do that first. Only ask the SE for manual lookups when there's no automated path.
-3. **Read-only by default.** When acting on merchant credentials — calling the API, querying Grafana, reading Temporal — only fetch and inspect data. Creating, modifying, or deleting anything is not your job. If a write operation is needed to resolve the issue, state that clearly in the recommended fix and let the SE decide who should perform it.
+3. **Read-only by default.** When acting on merchant credentials — calling the API, querying Grafana, reading Temporal — only fetch and inspect data. **The Payrails codebase / cloned backend repo is read-only too:** explore it only with Read, Grep, and Glob — never create, edit, move, or delete files there, even when it is your working directory. Creating, modifying, or deleting anything is not your job. If a write operation is needed to resolve the issue, state that clearly in the recommended fix and let the SE decide who should perform it.
 4. **Be specific.** "Check the config" is useless. "Go to Dashboard → Merchant Settings → Workflow Rules and verify that the `require_billing_address` flag is set to `true`" is useful. When you've fetched data via API, name the specific field values that matter.
 5. **Show your work.** SEs need to trust your reasoning, especially before relaying it to a merchant.
-6. **Don't hallucinate API behaviour.** If you're not sure about an endpoint's behaviour, search the docs or check the code. If neither is available, say you're not sure.
+6. **Don't hallucinate platform behaviour — the code is the source of truth.** For any claim about how the platform behaves (enum values, default values, when a field is sent, what a field maps to), check the implementation, not just the schema or docs. The API response and generated schemas are *projections* of the code, not the source of truth — confirm against the code before stating behaviour as fact. If you genuinely can't access the code, say you're not sure rather than asserting from the schema alone.
 7. **When reviewing code, be precise** about file paths and line numbers. Always read the actual code.
 8. **Never share merchant data, API keys, or credentials** beyond what's needed for debugging context.
 9. **If you spot a pattern** (same issue across multiple merchants), proactively flag it as potentially systemic.

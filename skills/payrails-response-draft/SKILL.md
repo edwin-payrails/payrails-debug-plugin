@@ -102,6 +102,15 @@ For **Linear ticket** drafts:
   `../payrails-debug/references/payrails-knowledge.md`)
 - Priority (P1-P4)
 - Whether the team has a specific ticket template for this problem type (see Step 3)
+- **Originating thread link + merchant** — the Plain thread URL or Slack message link the
+  issue came from, and the merchant name. **Reuse both from the investigation that just
+  ran** (the merchant is in the debug output's Problem summary; the thread link was read by
+  `../payrails-thread-debug/SKILL.md` at its Step 2). Only ask the user for either if it
+  isn't available from the prior session. These get attached to the ticket on filing (see
+  Step 3).
+- **Project** — the merchant's relevant Linear project (assigned on filing). It's resolved
+  from the merchant's projects in Linear rather than asked up front — but be ready to ask
+  the user to choose when there are several, or when none is found (see Step 3 filing).
 
 For **Slack message (internal)** drafts:
 - Target channel or person
@@ -119,7 +128,7 @@ You're gathering tone, history, and prior commitments.
 
 - **Plain** (via Plain MCP) — for merchant-facing drafts: the thread's previous
   correspondence, tone, style, any commitments already made. For internal drafts:
-  check if the issue originated in a Plain thread and link to it.
+  check if the issue originated in a Plain thread or Slack message and link to it.
 - **Slack** (via Slack MCP) — internal discussions about this merchant or issue. Has
   the team already agreed on a stance or message? Any guidance from engineering,
   product, or leadership that affects what's appropriate to share externally?
@@ -191,6 +200,9 @@ applies.
 **Target team:** [Platform / Provider / SDK / Infrastructure / other]
 **Priority:** [P1 urgent / P2 high / P3 medium / P4 low]
 **Template source:** [Team template: <name>] OR [Default]
+**Linked thread (→ Resource link):** [Plain thread URL or Slack message link — from the investigation]
+**Customer to attach (→ Customers):** [merchant name — from the investigation]
+**Project (→ Project):** [merchant's relevant Linear project — resolved on filing; ask if ambiguous or none]
 
 ---
 
@@ -228,6 +240,46 @@ Proposed Fix:
 - **Things to verify:** [Any facts or IDs to double-check before filing]
 - **Follow-up needed:** [What to do after filing]
 ```
+
+**Filing the ticket (only on explicit confirmation).**
+
+This skill drafts by default — it does **not** create or modify Linear tickets unless the
+user confirms. After presenting the Linear draft, end your response by asking explicitly,
+e.g. *"Do you want me to file this Linear ticket myself?"*
+
+If (and only if) the user says yes, create the ticket and attach **both** of the following
+as structured Linear objects — never as plain body text:
+
+1. **Originating thread → Resource link.** Attach the Plain thread URL or Slack message
+   link as a link on the issue. With the current Linear MCP this is `save_issue`'s `links`
+   field, e.g. `links: [{ url: "<thread URL>", title: "Plain – <title> (T-XXXX)" }]` (or
+   `title: "Slack – <channel> message"` for a Slack link). The `links` field is
+   append-only, so it's safe to add to an existing ticket too.
+2. **Merchant → customer request (Customers).** Look the customer up by name
+   (`list_customers` with `query: "<merchant>"`), then attach it to the issue as a customer
+   request (`save_customer_need` with `customer`, `issue`, and a short `body`). If no
+   customer matches, **do not invent or auto-create one** — surface it to the user (the
+   merchant may need creating first, or it's a pre-~2024 merchant with no customer record).
+
+3. **Project (→ Project).** Assign the merchant's relevant Linear project. Find it by
+   listing the merchant's projects (`list_projects` with `query: "<merchant>"`), matching
+   the merchant name **loosely** — projects are named in the form `<merchant> - … - <type>`,
+   and the merchant portion may vary in case or spacing (e.g. "my games" → "MY GAMES" /
+   "My Games" / "mygames"); the `<type>` suffix is something like `Onboarding`,
+   `Orchestration`, `Vault/Tokenization`, sometimes with a region (e.g.
+   "Puma - Peru - Orchestration"). Assign it with `save_issue`'s `project` field.
+   - **One clear match** → assign it.
+   - **Several plausible projects** for the merchant (different regions/types) → don't
+     guess. Narrow by the issue's context if it's unambiguous (an onboarding issue → the
+     Onboarding project; a region named in the thread → that region). If it's still
+     unclear, **list the candidates and ask the user which project to assign.**
+   - **No matching project found** → tell the user you couldn't find a project for the
+     merchant, and ask which project to assign — or whether filing with no project is fine.
+
+Use whatever the Linear MCP currently exposes for these outcomes (attaching a resource link
+to an issue, attaching a customer as a request, and assigning a project). **If the tool
+names or parameters referenced here no longer match what the Linear MCP offers, say so in
+your response** so the user knows this skill needs updating.
 
 ### If the target is a Slack message (internal):
 
@@ -291,6 +343,10 @@ Before presenting the draft, verify based on the audience:
 - Priority is honestly set (not inflated to get faster attention)
 - Team routing matches the team that actually owns this area (see
   `../payrails-debug/references/payrails-knowledge.md`)
+- **(Linear, when filed)** the originating thread is attached as a **Resource link**, the
+  merchant as a **customer request**, and the **project** is assigned — none left as body
+  text only. (If the project was ambiguous or not found, confirm you asked the user rather
+  than guessing.)
 
 ---
 

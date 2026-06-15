@@ -44,7 +44,7 @@ minimum, read these core files:
 
 Read these additional files when the session touched the relevant area:
 
-- `../payrails-debug/references/temporal.md` — Temporal staging access, namespace format, query patterns, codec decryption
+- `../payrails-debug/references/temporal.md` — Temporal access via the `temporal` MCP tools, namespace format, query patterns, codec decryption
 - `../payrails-debug/references/grafana.md` — Grafana instance selection, who manages access
 - `../payrails-debug/references/providers/gpay.md` — Google Pay tokenisation error patterns
 
@@ -68,7 +68,7 @@ Only draw learnings from sources that reflect durable, structural facts about th
 - **Codebase schema files** — confirmed field names and their meaning (`doc/oas/src/`)
 - **Live API calls that succeeded** — confirmed response shapes, field values, what they mean
 - **Grafana queries that worked** — confirmed namespace conventions, useful log query patterns
-- **Temporal queries that worked** — confirmed workflow state patterns, codec decryption behaviours
+- **Temporal lookups that worked** (via the `temporal` MCP tools) — confirmed workflow state patterns, codec decryption behaviours
 
 Do NOT carry findings from Slack, Linear, Notion, or Plain threads into the knowledge
 files. Those are case-specific context — useful for the session, but not generalizable
@@ -118,7 +118,7 @@ Route each learning to the file that best matches the subject matter:
 - **`payrails-knowledge.md`** — general API patterns, auth behaviours, error codes, team
   routing updates, and provider gotchas that aren't big enough to warrant a dedicated
   provider file
-- **`temporal.md`** — Temporal-specific: new query patterns, codec behaviours, namespace
+- **`temporal.md`** — Temporal-specific: new `temporal` MCP tool usage patterns, codec behaviours, namespace
   conventions, workflow-type discoveries
 - **`grafana.md`** — Grafana-specific: new instance learnings, access-control changes,
   useful log query patterns or namespace quirks

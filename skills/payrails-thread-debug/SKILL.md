@@ -1,23 +1,32 @@
 ---
 name: payrails-thread-debug
 description: >
-  Autonomous Payrails merchant issue investigator that reads a Plain support thread and
-  runs the full payrails-debug investigation by itself — no SE hand-holding required.
-  Trigger this skill when the user provides a Plain thread ID (like "t-2141", "T-2141",
-  "look into thread t-XXXX", "debug this Plain thread", "investigate this support ticket")
-  and wants a full autonomous diagnosis including direct API calls. Also trigger when the
-  user pastes a Plain thread reference alongside merchant credentials (clientId/clientSecret).
-  The skill fetches the problem from Plain, runs the complete payrails-debug workflow,
-  and delivers a structured diagnosis with confidence level and clear human/machine action
-  split.
+  Autonomous Payrails merchant issue investigator. Takes a reported problem from a
+  Plain support thread OR a Slack message, fetches the details, and runs the full
+  payrails-debug investigation by itself — no SE hand-holding required.
+  Trigger this skill when the user points to a reported merchant problem to investigate:
+  - Plain — a thread reference like "t-2141"/"T-2141" or a Plain thread link
+    ("look into thread t-XXXX", "debug this Plain thread", "investigate this support ticket").
+  - Slack — a link to a SPECIFIC Slack message TOGETHER WITH a debugging request such as
+    "take care of this problem in Slack", "investigate this Slack message", "debug this".
+    A Slack link on its own is NOT a trigger — it must come with intent to investigate,
+    since a link may be pasted for other reasons.
+  Also trigger when the user pastes a Plain reference, or a Slack link with debugging
+  intent, alongside merchant credentials (clientId/clientSecret).
+  IMPORTANT: for a Slack-sourced problem you need the link to the SPECIFIC Slack message —
+  a channel name, or a vague "there's a problem in Slack", is not enough. If you weren't
+  given an exact message link, ask for it before proceeding.
+  The skill fetches the problem from Plain or Slack, runs the complete payrails-debug
+  workflow, and delivers a structured diagnosis with confidence level and a clear
+  human/machine action split.
 ---
 
 # Payrails Thread Debug
 
 You are running an autonomous debugging session for a Payrails merchant issue reported
-via a Plain support thread. Your job is to fetch the thread, pass the issue into the
-full payrails-debug workflow, and deliver the resulting diagnosis — without pausing to
-ask the SE to check things they're not physically required for.
+via a Plain support thread or a Slack message. Your job is to fetch the reported problem,
+pass it into the full payrails-debug workflow, and deliver the resulting diagnosis —
+without pausing to ask the SE to check things they're not physically required for.
 
 The actual debugging logic, tool usage (API, Grafana, Temporal, codebase, knowledge
 files), and output format all live in `../payrails-debug/SKILL.md`. Read that skill
@@ -28,9 +37,20 @@ before doing anything else.
 
 ## Step 1 — Collect inputs
 
-You need four things before starting. Collect any that aren't already provided:
+First, identify the **source** of the problem and get a precise pointer to it, then
+collect the environment and credentials.
 
-**Plain thread ID** — the T-XXXX reference (e.g. "t-2141"). If not given, ask for it.
+**Problem source + pointer** — one of:
+
+- **Plain** — a thread reference (`T-XXXX`, e.g. "t-2141") *or* a Plain thread link.
+- **Slack** — a link to the **specific Slack message** (a permalink to the exact message),
+  together with a request to investigate or debug it. A Slack link on its own isn't an
+  investigation request (it may be pasted for another reason), and a channel name or a
+  vague "there's a problem in Slack" is NOT enough — a channel can contain many separate
+  issues. If you weren't given an exact message link, ask for it before proceeding.
+
+If the source itself is unclear, ask whether the problem is in Plain or Slack and request
+the corresponding reference or link.
 
 **Environment** — production or staging. This matters because the base URL and
 credentials differ. If not stated, ask explicitly before making any API calls — don't
@@ -48,19 +68,23 @@ If credentials aren't provided, ask for them. State which environment you need t
 
 ---
 
-## Step 2 — Read the Plain thread
+## Step 2 — Read the reported problem
 
-Use the Plain MCP tool to fetch the thread. The thread is your problem input — treat
-it the way the payrails-debug skill treats a problem brought to it by an SE.
+Fetch the problem from its source. Treat it the way the payrails-debug skill treats a
+problem brought to it by an SE.
 
-Search for the thread by its T-XXXX reference if needed (the internal ID format differs
-from the display reference).
+- **Plain** — use the Plain MCP tool to fetch the thread. Search for the thread by its
+  `T-XXXX` reference if needed (the internal ID format differs from the display
+  reference); a Plain thread link also resolves to the thread.
+- **Slack** — use the Slack MCP to read the linked message and its thread. A Slack
+  permalink encodes the channel and the message timestamp; read that message plus any
+  thread replies to get the full context.
 
-Extract from the thread:
+Extract from the source:
 - Merchant name and contact
 - The exact error or symptom reported
 - Any IDs mentioned (execution ID, payment ID, gateway reference, merchantTransactionId)
-- What the merchant is asking for
+- What the merchant / reporter is asking for
 
 ---
 
@@ -74,15 +98,15 @@ codebase exploration; knowledge references; and the output format.
 
 **Autonomous framing — specific to thread-debug sessions:**
 
-Because you were invoked with a Plain thread and credentials, the SE expects you to
-run the full investigation yourself, not pause for their input. Don't ask the SE to
-check things they could do manually — the debug skill will try API, Grafana, Temporal,
-and codebase lookups first, and only flag genuinely inaccessible items (PSP dashboards,
-human-only approval flows) as needing the SE.
+Because you were invoked with a reported problem (a Plain thread or a Slack message) and
+credentials, the SE expects you to run the full investigation yourself, not pause for
+their input. Don't ask the SE to check things they could do manually — the debug skill
+will try API, Grafana, Temporal, and codebase lookups first, and only flag genuinely
+inaccessible items (PSP dashboards, human-only approval flows) as needing the SE.
 
 Deliver the final result using the output format defined in `../payrails-debug/SKILL.md`.
 When populating the "Problem summary" field, include what the merchant reported in the
-Plain thread and what they're asking for.
+Plain thread or Slack message and what they're asking for.
 
 **Do NOT make any changes.** Fetching and inspecting data is fine. Creating, modifying,
 or deleting anything is not.
@@ -95,6 +119,11 @@ If the output's "Follow-up communications needed" section flags that a merchant 
 or internal escalation (Linear ticket, Slack message) is needed, offer to invoke
 `payrails-response-draft` to produce the appropriate draft. Don't draft the communication
 yourself — `payrails-response-draft` handles that when the user explicitly requests it.
+
+When you do, pass along the **originating thread link** (the Plain thread URL or Slack
+message link you read in Step 2) and the **merchant name**, so a Linear-ticket draft can
+attach the thread as a Resource link and the merchant as a customer request without having
+to ask for them again.
 
 ---
 
