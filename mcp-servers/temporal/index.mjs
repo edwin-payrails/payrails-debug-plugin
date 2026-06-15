@@ -21356,6 +21356,7 @@ async function listNamespaces(environment, scope, pageSize) {
 }
 
 // src/codec.ts
+var ENCRYPTED_PREFIX = "QUVTLUdD";
 async function decodeViaCodec(codecUrl, namespace, payloads) {
   let result;
   try {
@@ -21375,8 +21376,26 @@ async function decodeViaCodec(codecUrl, namespace, payloads) {
     }
     throw e;
   }
-  return result.payloads.map((p) => {
-    if (!p.data) return { ...p, decoded: null };
+  return result.payloads.map((p, i) => {
+    const original = payloads[i];
+    if (!p.data) {
+      if (original?.data) {
+        return {
+          ...p,
+          data: original.data,
+          decoded: null,
+          decodeStatus: "encrypted \u2014 codec did not decode this payload; original encrypted data retained in `data`"
+        };
+      }
+      return { ...p, decoded: null, decodeStatus: "empty \u2014 no payload data present" };
+    }
+    if (p.data.startsWith(ENCRYPTED_PREFIX)) {
+      return {
+        ...p,
+        decoded: null,
+        decodeStatus: "encrypted \u2014 codec did not decode this payload (sensitive field, or a namespace/type it can't decrypt); raw retained in `data`"
+      };
+    }
     try {
       const text = Buffer.from(p.data, "base64").toString("utf-8");
       try {

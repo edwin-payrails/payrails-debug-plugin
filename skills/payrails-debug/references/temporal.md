@@ -78,6 +78,11 @@ Responses are also kept lean automatically without losing information:
 - **`get_execution` payloads** include the **decoded** form; the redundant raw
   encrypted blob is omitted *when a decoded form exists*. If a payload could not
   be decoded (e.g. the `multitenant-backend` codec gap), its raw `data` is kept.
+- **`decodeStatus` on a `null` decode:** when `decoded` is `null`, the payload
+  carries a `decodeStatus` telling you *why* — `"empty — no payload data present"`
+  (genuinely nothing, e.g. continue-as-new) vs `"encrypted — codec did not decode
+  this payload …"` (a payload the codec left AES-GCM-encrypted; raw kept in `data`).
+  So you never have to guess whether a `null` means "no data" or "couldn't decode."
 
 ## Payload decryption (codec)
 
