@@ -30,6 +30,21 @@
                 "GRAFANA_USERNAME": "${GRAFANA_USERNAME}",
                 "GRAFANA_PASSWORD": "${GRAFANA_PASSWORD}"
             }
+        },
+        "temporal": {
+            "command": "node",
+            "args": [
+                "${CLAUDE_PLUGIN_ROOT}/mcp-servers/temporal/index.mjs"
+            ],
+            "env": {
+                "TEMPORAL_STAGING_MERCHANTS_URL": "https://status.temporal01.staging.aws.payrails.io",
+                "TEMPORAL_STAGING_INTERNAL_URL": "https://status.temporal11.staging.aws.payrails.io",
+                "TEMPORAL_PRODUCTION_URL": "https://status.temporal01.mixed-eu.aws.payrails.io",
+                "TEMPORAL_CODEC_STAGING_MERCHANTS": "https://api.staging.payrails.io/merchant/temporal/codec/decode",
+                "TEMPORAL_CODEC_STAGING_MERCHANTS_FALLBACK": "https://rc-api.staging.payrails.io/merchant/temporal/codec/decode",
+                "TEMPORAL_CODEC_STAGING_MULTITENANT": "https://multitenant-api.staging.payrails.io/merchant/temporal/codec/decode",
+                "TEMPORAL_CODEC_PRODUCTION": "https://api.payrails.io/merchant/temporal/codec/decode"
+            }
         }
     }
 }

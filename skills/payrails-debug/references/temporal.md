@@ -1,112 +1,101 @@
-# Temporal staging reference
+# Temporal reference
 
-## Access
+Temporal workflow state is queried through the **`temporal` MCP server** (bundled
+in this plugin). Prefer these tools over raw curl — they handle cluster routing,
+failover, retries, and payload decoding for you. (Raw curl against the REST API
+still works as a fallback for anything not covered; see the bottom of this file.)
 
-No authentication required. Query directly via Bash/curl.
+## Tools (all read-only)
 
-- **Primary staging cluster:** `https://status.temporal01.staging.aws.payrails.io`
-- **Mixed-EU cluster:** `https://status.temporal01.mixed-eu.aws.payrails.io` (different merchants — check both if needed)
+| Tool | Use it for |
+|---|---|
+| `list_workflows` | List recent workflows, filter by type / status / time range |
+| `describe_workflow` | All runs (run IDs) + status for one workflow ID |
+| `get_workflow_history` | Event history for a specific run |
+| `decode_payload` | Decode encrypted payloads via the codec server |
+| `get_execution` | **Best for a payment execution ID** — finds runs, gets history, decodes payloads, all in one call |
+| `search_workflows` | Free-form Temporal visibility query (anything the others don't cover) |
+| `list_namespaces` | Discover namespaces on a cluster (when the merchant's namespace isn't the default) |
 
-## Namespace format
+Every tool takes:
+- **`namespace`** — `{merchant}-backend` (e.g. `playtomic-backend`). If a merchant
+  doesn't follow that pattern, use `list_namespaces` to find the real one.
+- **`environment`** — `"staging"` or `"production"`.
 
-`{merchant}-backend` — e.g. `playtomic-backend`, `kilohealth-backend`, `eneba-backend`
+The server auto-routes to the right cluster (merchant vs internal) based on the
+namespace, and **falls back to the other cluster in the same environment** if the
+first is empty. It never crosses staging↔production.
 
-## Useful queries
+## Common tasks
 
-**List recent MainWorkflow executions:**
-```bash
-curl -s "https://status.temporal01.staging.aws.payrails.io/api/v1/namespaces/{merchant}-backend/workflows?pageSize=10&query=WorkflowType%3D%22MainWorkflow%22"
+**A merchant gave you a payment execution ID** → use `get_execution`:
+```
+get_execution(namespace="{merchant}-backend", environment="staging", executionId="{uuid}")
+```
+Returns all runs, the latest run's history, and decoded payloads in one shot.
+This replaces the old multi-step curl-history-then-codec flow.
+
+**List recent payment workflows:**
+```
+list_workflows(namespace="{merchant}-backend", environment="staging", workflowType="MainWorkflow")
 ```
 
-**Filter by execution status (Running/Completed):**
-```bash
-# Running only:
-curl -s "...?pageSize=10&query=WorkflowType%3D%22MainWorkflow%22+AND+ExecutionStatus%3D%22Running%22"
+**Only running ones:**
+```
+list_workflows(..., workflowType="MainWorkflow", executionStatus="Running")
 ```
 
-**Look up a specific execution ID:**
-```bash
-curl -s "...?pageSize=10&query=WorkflowType%3D%22MainWorkflow%22+AND+WorkflowId%3D%22payment-acceptance%2F{uuid}%22"
-```
+**Time range:** pass `startTimeFrom` / `startTimeTo` (ISO 8601). (`ORDER BY` is not
+supported by Temporal; `BETWEEN`-style time bounds work.)
 
-**Filter by time range:**
-```bash
-# Use: StartTime BETWEEN "2026-04-15T12:00:00Z" AND "2026-04-15T15:00:00Z"
-```
-Note: `ORDER BY` is not supported.
+**Anything more specific** → `search_workflows` with a raw query, e.g.
+`WorkflowType="MainWorkflow" AND WorkflowId="payment-acceptance/{uuid}"`.
 
-**Get workflow runs for a specific workflowId (all run IDs):**
-Returns multiple entries for the same workflowId if it was restarted.
+**Inspect one run's history:** `describe_workflow` to get the run ID, then
+`get_workflow_history`.
 
-**Get workflow history:**
-```bash
-curl -s "https://status.temporal01.staging.aws.payrails.io/api/v1/namespaces/{merchant}-backend/workflows/{urlencoded-workflowId}/history?execution.run_id={runId}&maximumPageSize=30"
-```
-⚠️ The run ID must be a **query param** (`execution.run_id=`), NOT a path segment. Using `/runs/{runId}/history` returns 404.
-⚠️ History payloads are `binary/zlib` encoded — raw bytes are zlib-compressed AND encrypted. **Do NOT try to decompress with Python `zlib.decompress()` — it will return garbage (`encodingbinary/null`).** Always use the codec server below to decode. This step is mandatory, not optional.
+## Large responses
 
-**Common mistake:** Using `http://` instead of `https://` will time out (port 80 is not open). Always use `https://`.
+`get_execution` and `get_workflow_history` can be large. When a response is big,
+the tool returns a **compact summary plus a `_fullDataPath` file path** instead of
+flooding the conversation. Read that file (with the Read tool) to get the complete
+data — nothing is lost, it's just kept out of context until you need it. Key
+fields (run counts, event counts, cluster) are in the inline summary.
 
-## Decrypting Temporal payloads (codec server)
+Responses are also kept lean automatically without losing information:
+- **Search attributes** (`BuildIds`, `TemporalChangeVersion`, …) are returned
+  **decoded/readable** (e.g. a list of change tags) rather than as opaque base64.
+- **`get_execution` payloads** include the **decoded** form; the redundant raw
+  encrypted blob is omitted *when a decoded form exists*. If a payload could not
+  be decoded (e.g. the `multitenant-backend` codec gap), its raw `data` is kept.
 
-Temporal history payloads are encrypted, but the **Payrails codec server decrypts non-sensitive fields** without any authentication.
+## Payload decryption (codec)
 
-**Codec endpoint (staging):**
-```
-POST https://rc-api.staging.payrails.io/merchant/temporal/codec/decode
-```
+`get_execution` decodes payloads automatically. To decode payloads you already
+have in hand, use `decode_payload`. **What gets decrypted:** non-sensitive fields
+like `holderReference`, `workspaceId`, `merchantReference`, `workflowCode`, and
+event input/output structs. **Sensitive fields stay encrypted** (card numbers,
+tokens — prefix `QUVTLUdDTT`). Field structure (string vs object) is preserved
+even when a value stays encrypted — useful for spotting format errors.
 
-**Required header:** `X-Namespace: {merchant}-backend` (e.g. `X-Namespace: playtomic-backend`)
-**No auth token required** — the middleware only extracts the merchant name from the header.
+**Known gap:** the `multitenant-backend` namespace (config/backoffice workflows)
+cannot be decrypted — the codec lacks that namespace's key, so its payloads stay
+encrypted. This is expected, not an error.
 
-**Request format:**
-```bash
-curl -s -X POST "https://rc-api.staging.payrails.io/merchant/temporal/codec/decode" \
-  -H "Content-Type: application/json" \
-  -H "X-Namespace: playtomic-backend" \
-  -d '{"payloads": [{"metadata": {...}, "data": "..."}]}'
-```
-Pass the full payload object from the history event as-is. The response returns the same structure with `data` decoded.
+**Temporal browser UI:** to see decrypted payloads inline in the Temporal web UI,
+click "Data Encoder" (bottom-left) → enter the codec base URL for the environment
+(staging merchants: `https://api.staging.payrails.io/merchant/temporal/codec`).
 
-**What gets decrypted:** Non-sensitive fields like `holderReference`, `workspaceId`, `merchantReference`, `workflowCode`, event input/output structs. **Sensitive fields stay encrypted** (card numbers, tokens, etc.).
+## Clusters (for reference / curl fallback)
 
-**Confirmed working** (2026-04-15, 2026-04-23): decoded Playtomic `ClientInitWorkflow` and Sunday Natural `AuthorizeWorkflow`. Keys are always readable; sensitive values stay AES-encrypted (prefix `QUVTLUdDTT`). Field structure (whether a value is a string vs object) is preserved even when encrypted — useful for spotting format errors.
+The MCP server is already configured with these via the plugin's `.mcp.json`; you
+normally don't touch them. Listed here for awareness:
 
-**Complete two-step flow:**
-```bash
-# Step 1: get the raw payload from history
-PAYLOAD=$(curl -s "https://status.temporal01.staging.aws.payrails.io/api/v1/namespaces/{merchant}-backend/workflows/{urlencoded-wfId}/history?execution.run_id={runId}&maximumPageSize=5" | python3 -c "
-import json, sys
-data = json.load(sys.stdin)
-for e in data.get('history',{}).get('events',[]):
-    if 'workflowExecutionStartedEventAttributes' in e:
-        payloads = e['workflowExecutionStartedEventAttributes'].get('input',{}).get('payloads',[])
-        print(json.dumps({'payloads': payloads}))
-        break
-")
-
-# Step 2: send to codec server
-echo "$PAYLOAD" | curl -s -X POST "https://rc-api.staging.payrails.io/merchant/temporal/codec/decode" \
-  -H "Content-Type: application/json" \
-  -H "X-Namespace: {merchant}-backend" \
-  -d @- | python3 -c "
-import json, sys, base64
-resp = json.load(sys.stdin)
-for p in resp.get('payloads', []):
-    d = p.get('data', '')
-    if d:
-        print(base64.b64decode(d).decode('utf-8', errors='replace'))
-"
-```
-
-**For Temporal browser UI:** Click "Data Encoder" button (bottom-left of Temporal UI) → enter `https://rc-api.staging.payrails.io/merchant/temporal/codec` to see decrypted payloads inline.
-
-## Limitations
-
-- Sensitive fields remain encrypted even after codec decryption
-- `ORDER BY` not supported in queries
-- `BETWEEN` for time ranges works
-- The Temporal UI at the same base URL is a React app — use the REST API directly
+- **Staging — merchant namespaces:** `status.temporal01.staging.aws.payrails.io`
+- **Staging — internal namespaces** (`payrails-backend`, `demo-backend`, `multitenant-backend`): `status.temporal11.staging.aws.payrails.io`
+- **Production:** `status.temporal01.mixed-eu.aws.payrails.io`
+  ⚠️ `mixed-eu` is **PRODUCTION**, not a staging alternative. Use
+  `environment="production"` to reach it — never query it for staging data.
 
 ## Workflow types at Payrails
 
@@ -115,4 +104,32 @@ for p in resp.get('payloads', []):
 
 ## Key insight for debugging
 
-`MainWorkflow` executions are **short-lived** (10-25s per run) — each action cycle creates a new run under the same workflowId. Between actions, the workflowId may be in COMPLETED state. If `QueryState()` is called when no run is RUNNING → `workflow_execution_not_found`.
+`MainWorkflow` executions are **short-lived** (10–25s per run) — each action cycle
+creates a new run under the same workflowId. Between actions, the workflowId may be
+in COMPLETED state. This is normal. (If `QueryState()` is called when no run is
+RUNNING → `workflow_execution_not_found`.)
+
+Temporal **retention is short (~5 days)** — workflows that finished more than a few
+days ago may no longer exist. The MCP returns a hint about this on not-found.
+
+## Limitations
+
+- Sensitive fields remain encrypted even after codec decryption.
+- `ORDER BY` is **not supported** — this is a limitation of Temporal's visibility
+  backend (the cluster rejects it: `"ORDER BY clause is not supported"`), not the
+  MCP, so no client (REST, SDK, or curl) can change it. Results come in Temporal's
+  **default order: most recent first** (by start time). To find a specific
+  workflow, **narrow with filters** (`workflowType`, `executionStatus`,
+  `startTimeFrom`/`startTimeTo`) rather than sorting. Time-range bounds (`BETWEEN`)
+  do work.
+- The Temporal UI at the cluster base URL is a React app — the MCP uses the REST API.
+
+## Raw curl fallback (only if the MCP can't cover something)
+
+The REST API needs no auth. Always use `https://` (port 80 is closed). History
+payloads are `binary/zlib` (compressed + encrypted) — do **not** `zlib.decompress`
+them yourself (returns garbage); always go through the codec. Run ID must be a
+query param (`execution.run_id=`), not a path segment (`/runs/{id}/history` → 404).
+```bash
+curl -s "https://{cluster}/api/v1/namespaces/{namespace}/workflows?pageSize=10&query={urlencoded-query}"
+```
