@@ -56,11 +56,16 @@ supported by Temporal; `BETWEEN`-style time bounds work.)
 
 ## Large responses
 
-`get_execution` and `get_workflow_history` can be large. When a response is big,
-the tool returns a **compact summary plus a `_fullDataPath` file path** instead of
-flooding the conversation. Read that file (with the Read tool) to get the complete
-data — nothing is lost, it's just kept out of context until you need it. Key
-fields (run counts, event counts, cluster) are in the inline summary.
+`get_execution` and `get_workflow_history` can be large. When a response exceeds
+the inline limit, the tool writes the full JSON to a cache file **inside the
+session workspace** (`${CLAUDE_PROJECT_DIR}/.payrails-temporal-cache/`, falling
+back to the system temp dir) and returns a compact summary plus the
+`_fullDataPath`. Read that file — or slice it with Read offset/limit, or a bash
+`jq`/`grep` — to get the complete data without flooding context. If the `_note`
+warns it fell back to the system temp dir, this session may not be able to read it
+(set `TEMPORAL_OFFLOAD_DIR` to a folder the session can access). Files are swept
+after 24h on server startup. Key fields (run counts, event counts, cluster) are in
+the inline summary.
 
 Responses are also kept lean automatically without losing information:
 - **Search attributes** (`BuildIds`, `TemporalChangeVersion`, …) are returned

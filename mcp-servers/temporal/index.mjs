@@ -21411,6 +21411,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 var DEFAULT_MAX_INLINE_CHARS = 5e4;
 var TEMP_SUBDIR = "payrails-temporal-mcp";
+var CACHE_SUBDIR = ".payrails-temporal-cache";
 var MAX_FILE_AGE_MS = 24 * 60 * 60 * 1e3;
 var OBJECT_INLINE_LIMIT = 2e3;
 function maxInlineChars() {
@@ -21418,10 +21419,32 @@ function maxInlineChars() {
   const n = raw ? Number.parseInt(raw, 10) : Number.NaN;
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_INLINE_CHARS;
 }
+var resolvedOffload;
+function resolveOffloadDir() {
+  if (resolvedOffload) return resolvedOffload;
+  const candidates = [];
+  const explicit = process.env.TEMPORAL_OFFLOAD_DIR?.trim();
+  if (explicit) candidates.push({ dir: explicit, tmpFallback: false });
+  const projectDir = process.env.CLAUDE_PROJECT_DIR?.trim();
+  if (projectDir) {
+    candidates.push({ dir: join(projectDir, CACHE_SUBDIR), tmpFallback: false });
+  }
+  candidates.push({ dir: join(tmpdir(), TEMP_SUBDIR), tmpFallback: true });
+  for (const candidate of candidates) {
+    try {
+      mkdirSync(candidate.dir, { recursive: true });
+      resolvedOffload = candidate;
+      return resolvedOffload;
+    } catch {
+    }
+  }
+  const last = { dir: join(tmpdir(), TEMP_SUBDIR), tmpFallback: true };
+  mkdirSync(last.dir, { recursive: true });
+  resolvedOffload = last;
+  return resolvedOffload;
+}
 function tempDir() {
-  const dir = join(tmpdir(), TEMP_SUBDIR);
-  mkdirSync(dir, { recursive: true });
-  return dir;
+  return resolveOffloadDir().dir;
 }
 var fileCounter = 0;
 function nextFilePath(toolName) {
@@ -21469,12 +21492,15 @@ function renderResult(data, toolName) {
   if (full.length <= maxInlineChars()) {
     return full;
   }
+  const { tmpFallback } = resolveOffloadDir();
   const path = nextFilePath(toolName);
   writeFileSync(path, full, "utf-8");
+  const baseNote = `This response (${full.length} chars) was too large to return inline, so the complete JSON was written to the cache file below. Read it with the Read tool (you can slice with offset/limit, or run bash jq/grep on it) to get the full data without flooding context. The 'summary' field shows the response shape and all small/scalar fields.`;
+  const fallbackNote = tmpFallback ? ` NOTE: this was written to the server's system temp dir, which the current session may not be able to read. If Read fails, set TEMPORAL_OFFLOAD_DIR (or ensure CLAUDE_PROJECT_DIR is set) to a folder this session can access.` : "";
   return JSON.stringify(
     {
       _largeResult: true,
-      _note: `This response (${full.length} chars) was too large to return inline, so the complete JSON was written to the file below. Read that file with the Read tool to access the full data. The 'summary' field shows the response shape and all small/scalar fields.`,
+      _note: baseNote + fallbackNote,
       _fullDataPath: path,
       summary: summarize(data)
     },
