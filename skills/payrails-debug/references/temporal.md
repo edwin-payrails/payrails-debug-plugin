@@ -13,7 +13,7 @@ still works as a fallback for anything not covered; see the bottom of this file.
 | `describe_workflow` | All runs (run IDs) + status for one workflow ID |
 | `get_workflow_history` | Event history for a specific run |
 | `decode_payload` | Decode encrypted payloads via the codec server |
-| `get_execution` | **Best for a payment execution ID** — finds runs, gets history, decodes payloads, all in one call |
+| `get_execution` | **Best for a payment execution ID** — one call returns run metadata, a compact **event index** (the *ordered event sequence* — eventId/type/time only, not event bodies), and **decoded payloads**. Optional `runId` to inspect a non-latest run. For full raw event detail/attributes, use `get_workflow_history`. |
 | `search_workflows` | Free-form Temporal visibility query (anything the others don't cover) |
 | `list_namespaces` | Discover namespaces on a cluster (when the merchant's namespace isn't the default) |
 
@@ -32,8 +32,13 @@ first is empty. It never crosses staging↔production.
 ```
 get_execution(namespace="{merchant}-backend", environment="staging", executionId="{uuid}")
 ```
-Returns all runs, the latest run's history, and decoded payloads in one shot.
-This replaces the old multi-step curl-history-then-codec flow.
+Returns: all runs (metadata), a compact **event index** for the chosen run (the
+*ordered event sequence* — eventId/type/time per event, NOT the event bodies), and
+the **decoded payloads** (the events that carried decodable content). For full raw
+event detail/attributes, call `get_workflow_history`. To inspect an earlier action
+cycle, pass its `runId` (Payrails creates a new run per cycle; get run IDs from the
+`allRuns` field or `describe_workflow`). This replaces the old multi-step
+curl-history-then-codec flow.
 
 **List recent payment workflows:**
 ```
@@ -128,6 +133,14 @@ days ago may no longer exist. The MCP returns a hint about this on not-found.
   `startTimeFrom`/`startTimeTo`) rather than sorting. Time-range bounds (`BETWEEN`)
   do work.
 - The Temporal UI at the cluster base URL is a React app — the MCP uses the REST API.
+- **History pagination is single-page (honest, not silent).** `get_workflow_history`
+  (and `get_execution`'s event index) fetch one page. Payrails runs are short (well
+  under one page), so in practice this is always complete. If a single run ever
+  exceeded one page, the response includes `truncated: true` + a `nextPageToken` so
+  you know it's partial. That token is **informational only** — the tools don't
+  currently page through it (and never did; the old curl flow was also single-page).
+  For the rare full history of an oversized single run, fall back to raw curl using
+  the token.
 
 ## Raw curl fallback (only if the MCP can't cover something)
 

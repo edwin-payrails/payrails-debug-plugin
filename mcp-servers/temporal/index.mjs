@@ -21304,14 +21304,17 @@ async function historyFromCluster(clusterUrl, namespace, workflowId, runId, maxE
   });
   const url = `${clusterUrl}/api/v1/namespaces/${encodeURIComponent(namespace)}/workflows/${encodeURIComponent(workflowId)}/history?${qs}`;
   const data = await fetchJsonWithRetry(url);
-  return data.history?.events ?? [];
+  return {
+    events: data.history?.events ?? [],
+    nextPageToken: data.nextPageToken || void 0
+  };
 }
 async function getWorkflowHistory(environment, namespace, workflowId, runId, maxEvents) {
   const clusters = resolveClusters(environment, namespace);
   return tryClusters(
     clusters,
     (url) => historyFromCluster(url, namespace, workflowId, runId, maxEvents),
-    (data) => data.length === 0
+    (data) => data.events.length === 0
   );
 }
 async function getHistoryFromCluster(clusterUrl, namespace, workflowId, runId, maxEvents) {
@@ -21687,8 +21690,11 @@ server.tool(
       );
       return ok(
         {
-          events: result.data,
-          count: result.data.length,
+          events: result.data.events,
+          count: result.data.events.length,
+          // Honestly surface partial results: if Temporal has more pages than
+          // this single fetch returned, the caller knows it's incomplete.
+          ...result.data.nextPageToken ? { truncated: true, nextPageToken: result.data.nextPageToken } : {},
           cluster: result.cluster,
           scope: result.scope,
           usedFallback: result.usedFallback
@@ -21730,20 +21736,24 @@ server.tool(
 server.tool(
   "get_execution",
   [
-    "Convenience tool: given a payment execution ID, fetches the full workflow history",
-    "and decodes all payloads in one call. Equivalent to: describe_workflow \u2192",
-    "get_workflow_history \u2192 decode_payload, all chained automatically.",
-    "workflowId is resolved as payment-acceptance/{executionId}."
+    "Convenience tool for a payment execution ID: locates its runs, then for one run",
+    "(latest by default, or a specific runId) returns run metadata, a compact event",
+    "index (eventId/type/time for the full timeline), and the decoded payloads \u2014 in one",
+    "call. It does NOT inline every raw history event; for full raw event detail use",
+    "get_workflow_history. workflowId is resolved as payment-acceptance/{executionId}."
   ].join(" "),
   {
     namespace: namespaceSchema,
     environment: environmentSchema,
     executionId: external_exports.string().describe(
       "The payment execution UUID, e.g. '550e8400-e29b-41d4-a716-446655440000'"
+    ),
+    runId: external_exports.string().optional().describe(
+      "Optional: decode a specific run instead of the latest. Payrails creates a new run per action cycle, so use this to inspect an earlier cycle. Run IDs come from describe_workflow or the allRuns field. Defaults to the latest run."
     )
   },
   readOnly,
-  async ({ namespace, environment, executionId }) => {
+  async ({ namespace, environment, executionId, runId: requestedRunId }) => {
     try {
       const workflowId = `payment-acceptance/${executionId}`;
       const workflowResult = await listWorkflows(
@@ -21759,17 +21769,24 @@ server.tool(
       }
       const sorted = sortByStartTimeDesc(workflowResult.data);
       const latestRun = sorted[0];
-      const runId = latestRun.execution?.runId;
-      if (!runId) {
-        return err(`Could not extract runId from latest run for workflowId="${workflowId}"`);
+      const latestRunId = latestRun.execution?.runId;
+      const targetRunId = requestedRunId ?? latestRunId;
+      if (!targetRunId) {
+        return err(`Could not determine a runId for workflowId="${workflowId}"`);
       }
-      const historyEvents = await getHistoryFromCluster(
+      const history = await getHistoryFromCluster(
         workflowResult.cluster,
         namespace,
         workflowId,
-        runId,
+        targetRunId,
         500
       );
+      const historyEvents = history.events;
+      const eventIndex = historyEvents.map((e) => ({
+        eventId: e.eventId,
+        eventType: e.eventType,
+        eventTime: e.eventTime
+      }));
       const payloadsWithContext = extractPayloads(historyEvents);
       const rawPayloads = payloadsWithContext.map((p) => p.payload);
       let decodedPayloads = rawPayloads;
@@ -21799,11 +21816,16 @@ server.tool(
       return ok(
         {
           workflowId,
+          runIdDecoded: targetRunId,
           latestRun,
           allRuns: sorted,
           totalRuns: sorted.length,
           historyEventCount: historyEvents.length,
+          eventIndex,
           decodedPayloads: decodedWithContext,
+          // If the target run's history spans more than one page, say so rather
+          // than implying eventIndex/decodedPayloads are complete.
+          ...history.nextPageToken ? { historyTruncated: true, nextPageToken: history.nextPageToken } : {},
           cluster: workflowResult.cluster,
           scope: workflowResult.scope,
           usedFallback: workflowResult.usedFallback,
