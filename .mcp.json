@@ -2,7 +2,11 @@
     "mcpServers": {
         "plain": {
             "command": "npx",
-            "args": ["-y", "mcp-remote", "https://mcp.plain.com/mcp"]
+            "args": [
+                "-y",
+                "mcp-remote",
+                "https://mcp.plain.com/mcp"
+            ]
         },
         "slack": {
             "type": "http",
@@ -24,11 +28,10 @@
             ]
         },
         "grafana": {
-            "command": "${PAYRAILS_GRAFANA_BIN}",
-            "env": {
-                "GRAFANA_URL": "https://grafana.telemetry.payrails.io",
-                "GRAFANA_USERNAME": "${GRAFANA_USERNAME}",
-                "GRAFANA_PASSWORD": "${GRAFANA_PASSWORD}"
+            "type": "http",
+            "url": "https://mcp.grafana.com/mcp",
+            "headers": {
+                "X-Grafana-URL": "https://payrails.grafana.net"
             }
         },
         "temporal": {

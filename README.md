@@ -4,7 +4,7 @@ A Claude Code plugin for the Payrails Solutions Engineering team that packages m
 
 When you install this plugin, you get:
 - **Debugging skills** — Claude Code knows the Payrails-specific debugging workflow (UNDERSTAND → SEARCH → DIAGNOSE → FIX → ESCALATE)
-- **Grafana MCP** — query Loki logs and dashboards from inside Claude Code
+- **Grafana (via the `gcx` CLI)** — query Loki logs, Prometheus metrics, Tempo traces, and dashboards from inside Claude Code
 - **Plain MCP** — read merchant support threads
 - **Playwright MCP** — browser automation for looking up provider docs (Adyen, Stripe, etc.)
 - **Slack/Linear/Notion MCPs** — search prior team discussions, issues, and runbooks
@@ -17,54 +17,34 @@ The plugin installs at **user scope**, meaning once installed it works in any fo
 ## Supported environments
 
 This plugin can be installed and used in:
-- **Antigravity** (the IDE) with Claude Code — primary supported environment
+- **Antigravity** (the IDE) with Claude Code — primary supported environment; this README covers it
 - **Standalone Claude Code CLI** (`claude` command in a terminal) — also supported
+- **Claude Desktop (cowork)** — supported via the cowork UI. Follow the separate **[Claude Desktop setup guide](./payrails-debug-plugin-setup.md)** instead of this README's install steps (the cowork UI flow differs). The Grafana (`gcx`) setup is the same in both.
 
 **Not supported:**
-- Claude Desktop app's Claude Code mode — that mode only loads Anthropic-curated plugins, not arbitrary GitHub-hosted ones.
+- Claude Desktop app's *Claude Code mode* — that mode only loads Anthropic-curated plugins, not arbitrary GitHub-hosted ones. (Cowork, listed above, is a different surface and does work.)
 - VS Code with the Claude Code extension — likely works similarly to Antigravity but not yet tested. If you try this, let Edwin know what you find.
 
 ---
 
 ## Prerequisites
 
-The list below shows what you'll need depending on which credential setup path you choose (covered below).
-
 **Always required:**
 - **Antigravity or standalone Claude Code CLI** — installed and working
 - **GitHub access** to `edwin-payrails/payrails-debug-plugin` — currently a private repo. Ask Edwin to add you as a collaborator. After security review, this moves to `payrails-hub` and access becomes automatic for Payrails GitHub org members.
 - **`gh` CLI** — authenticated to a GitHub account that has access to `edwin-payrails/payrails-debug-plugin`. This is whichever account you've been added to as a collaborator — it does NOT have to be a specific Payrails-affiliated account; a personal GitHub account also works as long as it has been granted repo access. If you haven't set up `gh` before, follow GitHub's setup at `https://cli.github.com`. Verify with `gh auth status` — you should see the authorized account as Active with `repo` scope. If you have multiple accounts, switch with `gh auth switch -u <username>`.
-- **Grafana credentials** for `https://grafana.telemetry.payrails.io` — your Payrails Grafana username and password.
 
-**Required only if using Path B (recommended) for credentials:**
-- **1Password CLI (`op`)** — installed and signed in to your Payrails 1Password vault. Verify with `op vault list`. If not installed: `brew install --cask 1password-cli`, then `op signin`. **If you don't have 1Password CLI and can't easily install it, skip this and use Path A instead** — Path A is the manual `.env` shortcut and works without `op`.
-- **Your Grafana credentials stored in 1Password** as an item with username and password fields. (Same fallback applies — if your credentials aren't in 1Password, use Path A.)
+**Required for Grafana** (logs/metrics/traces/dashboards):
+- **Grafana Cloud access** to `https://payrails.grafana.net` — your normal Payrails Grafana account (check your inbox for the invite if you don't have it yet).
+- **The `gcx` CLI** — a one-time install + login, covered in "Grafana setup" below. (No 1Password, no credentials file, no binary download — gcx handles auth via a browser login.)
 
 **Required only if using Playwright MCP** (browser automation for fetching provider docs):
 - **Node.js 18+** — verify with `node --version`. Most Payrails developers already have this. **If Node.js is missing and you don't need browser automation, skip this and continue setup** — the Playwright MCP will fail to load but every other plugin feature works fine. Install Node.js later if you want Playwright.
 
 **Convenience:**
-- **Homebrew** — the macOS package manager. Not strictly required, but the easiest way to install `gh`, `op`, or `node` if you don't have them. Install from `https://brew.sh`.
+- **Homebrew** — the macOS package manager. Not strictly required, but the easiest way to install `gh`, `gcx`, or `node` if you don't have them. Install from `https://brew.sh`.
 
 If any required prerequisite is missing, install it before continuing. The plugin install will succeed without these, but features depending on them will silently fail or be limited.
-
----
-
-## Choosing where to clone (Path B only)
-
-If you'll use Path B for credentials (the recommended 1Password-integrated path), you'll need a local clone of this plugin repo. Pick a directory that fits how you organize your code — there's no required location.
-
-This guide refers to your chosen location as `<plugin-dir>` throughout. Replace `<plugin-dir>` with your actual path whenever you see it.
-
-Common choices teammates have used:
-- `~/Documents/Payrails/payrails-debug-plugin`
-- `~/code/payrails-debug-plugin`
-- `~/projects/payrails-debug-plugin`
-- `~/dev/payrails-debug-plugin`
-
-Once you've picked a path, use it consistently throughout setup. The shell function in the Daily Workflow section assumes a single fixed path, so settle on one before you finish setup.
-
-If you're using Path A (manual `.env`), you don't need to clone the repo at all — Path A keeps `.env` inside Antigravity's marketplace folder, which is system-managed. Skip this section.
 
 ---
 
@@ -103,216 +83,57 @@ If you prefer clicking through the UI:
 
 ### Restart Claude Code
 
-After install, fully quit Antigravity (Cmd+Q, not the red X — see the Cmd+Q section below) and reopen. The plugin is now ready, but Grafana won't connect until you complete credential setup below.
+After install, fully quit Antigravity (Cmd+Q, not the red X — see the Cmd+Q note in Troubleshooting) and reopen. The plugin is now ready; complete the Grafana setup below so Claude can query Grafana.
 
 ---
 
-## Credential setup (Grafana)
+## Grafana setup (`gcx` CLI)
 
-The Grafana MCP needs your Payrails Grafana credentials. There are two paths — choose based on whether you have 1Password set up.
+Grafana is queried through the **`gcx` CLI** (Grafana's official command-line tool), which Claude runs in the shell. This is a one-time, per-person setup — **no credentials file, no 1Password, no binary download, no special launch ritual.**
 
-Both paths end the same way: a `.env` file gets written, then sourced before launching Antigravity.
-
-### Path A — Manual `.env` (faster, less secure)
-
-**Use only if you don't have 1Password set up, or for emergency testing.** Credentials sit on your laptop in plaintext.
-
-**1. Create `.env` in the marketplace folder:**
+**1. Install gcx** (one-time):
 
 ```bash
-cd ~/.claude/plugins/marketplaces/payrails-debug-plugin/
+brew install grafana/grafana/gcx
 ```
 
-**2. STOP — replace the placeholder values below with your real Payrails Grafana username and password before running this command:**
+(For non-Homebrew options, see `https://github.com/grafana/gcx#installation`.)
+
+**2. Log in** (one-time — browser OAuth with your normal Grafana account):
 
 ```bash
-cat > .env << 'EOF'
-GRAFANA_USERNAME="your.username"
-GRAFANA_PASSWORD="your-password"
-PAYRAILS_GRAFANA_BIN="$HOME/tools/mcp-grafana-official"
-EOF
+gcx login --server https://payrails.grafana.net
 ```
 
-If you skip the substitution, Grafana will fail to authenticate. If you're not sure what your Grafana username is, log in to `https://grafana.telemetry.payrails.io` and check your profile.
+Choose the **OAuth (browser)** option and approve in the browser. When it asks for an optional "Grafana Cloud API token," just press Enter to skip — it's not needed for debugging.
 
-**3. Source `.env` and launch Antigravity (covered below in "Launching Antigravity with credentials loaded").**
-
-### Path B — 1Password integrated (recommended, Payrails-security-aligned)
-
-This path keeps credentials in 1Password. They never sit on your disk in plaintext.
-
-**1. Verify 1Password CLI is set up:**
+**3. Verify:**
 
 ```bash
-op --version
-op vault list
+gcx config check
 ```
 
-If `op` isn't installed: `brew install --cask 1password-cli`, then `op signin`.
+Expected: `Auth method: oauth`, `Connectivity: online`, current context `payrails`, and a Grafana version. *(If you also see a separate `default` context reported as invalid, that's a harmless leftover — run `gcx config delete-context default`. Your active context is `payrails`.)*
 
-Your Grafana credentials must be stored in 1Password as an item with username and password fields.
+That's it. gcx stores your login under `~/.config/gcx/config.yaml`, so it works in **any** Claude Code session regardless of how you launched Antigravity — no env vars, no terminal ritual, nothing to re-source.
 
-**2. Clone the plugin repo locally** (separate from the installed cache copy — needed because `.env.tpl` lives here).
-
-Decide on `<plugin-dir>` (your chosen clone location, see "Choosing where to clone" above). For the commands below, replace `<plugin-dir>` with your actual path. Example values: `~/Documents/Payrails/payrails-debug-plugin`, `~/code/payrails-debug-plugin`, etc.
-
-```bash
-mkdir -p "$(dirname <plugin-dir>)"
-cd "$(dirname <plugin-dir>)"
-gh repo clone edwin-payrails/payrails-debug-plugin "$(basename <plugin-dir>)"
-cd <plugin-dir>
-```
-
-**If you've cloned this repo before (e.g., you're a maintainer or contributor)**, the `gh repo clone` command will fail with "destination path already exists." That's expected — skip the clone and just `cd` into your existing checkout:
-
-```bash
-cd <plugin-dir>
-```
-
-Either way, the next steps work the same.
-
-**3. Find your 1Password reference path:**
-
-In 1Password, find your Grafana item, click the menu (•••) on the username field, choose **"Copy Secret Reference."** This gives you the exact `op://Vault/Item/field` path. Repeat for the password field.
-
-**4. Edit `.env.tpl`** to use your specific 1Password references:
-
-```bash
-# Before (placeholders in the committed file)
-GRAFANA_USERNAME="op://<your-vault>/<your-grafana-item>/username"
-GRAFANA_PASSWORD="op://<your-vault>/<your-grafana-item>/password"
-PAYRAILS_GRAFANA_BIN="$HOME/tools/mcp-grafana-official"
-
-# After (example — your vault and item names will differ)
-GRAFANA_USERNAME="op://Employee/Grafana/username"
-GRAFANA_PASSWORD="op://Employee/Grafana/password"
-PAYRAILS_GRAFANA_BIN="$HOME/tools/mcp-grafana-official"
-```
-
-**5. Run `op inject` to write `.env`:**
-
-```bash
-op inject -i .env.tpl -o .env
-```
-
-You'll be prompted for Touch ID or your Mac password. Approve. This creates `.env` with your actual credentials. The `.env` file is gitignored — it never leaves your machine.
-
-**Note about `.env.tpl` content:** `op inject` parses any line in the file containing the literal substring `op://` as a real secret reference. This means **comment lines containing `op://` will cause inject to fail** with errors like `invalid secret reference 'op://...'`. The committed `.env.tpl` keeps `op://` only on the actual injection lines (`GRAFANA_USERNAME=` and `GRAFANA_PASSWORD=`); if you've edited the file and added explanatory comments, make sure none of them contain `op://`. If `op inject` fails with a parse error, run `grep -n 'op://' .env.tpl` and verify only the two injection lines match.
-
-**6. Source `.env` and launch Antigravity** (covered below).
-
----
-
-## Grafana binary setup (required regardless of Path A or B)
-
-The Grafana MCP runs as a local binary. You need to download it once.
-
-**1. Check if it's already installed:**
-
-```bash
-ls ~/tools/mcp-grafana-official 2>/dev/null && echo "EXISTS — skip to verification" || echo "NOT FOUND — proceed with download"
-```
-
-If it exists, skip to step 5 (verification).
-
-**2. Detect your Mac's architecture:**
-
-```bash
-uname -m
-```
-
-If output is `arm64` you have Apple Silicon. If `x86_64` you have Intel. The asset name differs.
-
-**3. Download the latest release:**
-
-Go to `https://github.com/grafana/mcp-grafana/releases`. From the latest release's Assets section, download:
-- Apple Silicon: `darwin.arm64.grafana.tar.gz`
-- Intel: `darwin.x64.grafana.tar.gz`
-
-Or via terminal (replace `<arch>` with `arm64` or `x64`):
-
-```bash
-mkdir -p ~/tools && cd /tmp
-RELEASE_TAG=$(gh api repos/grafana/mcp-grafana/releases/latest --jq '.tag_name')
-curl -fsSL -o mcp-grafana.tar.gz "https://github.com/grafana/mcp-grafana/releases/download/${RELEASE_TAG}/darwin.<arch>.grafana.tar.gz"
-```
-
-**4. Extract, move, and make executable:**
-
-```bash
-cd /tmp
-tar -xzf mcp-grafana.tar.gz
-mv mcp-grafana ~/tools/mcp-grafana-official
-chmod +x ~/tools/mcp-grafana-official
-```
-
-**5. Verify:**
-
-```bash
-~/tools/mcp-grafana-official --help
-```
-
-You should see a usage message listing flags. If you instead see "cannot be opened because the developer cannot be verified" (macOS Gatekeeper), run:
-
-```bash
-xattr -d com.apple.quarantine ~/tools/mcp-grafana-official
-```
-
-Then retry the verification.
-
----
-
-## Launching Antigravity with credentials loaded
-
-Whichever credential path you used (A or B), Grafana won't connect until env vars are loaded into Antigravity's process.
-
-**Critical**: macOS app processes only inherit env vars from the terminal that launched them. Spotlight launches won't work. Already-running Antigravity instances need to be fully quit first.
-
-**1. Fully quit any running Antigravity instance:**
-
-Cmd+Q (or right-click the dock icon and choose Quit). The red X only hides the window — the process keeps running with its old env vars. Verify by checking that the Antigravity icon is no longer in your dock.
-
-**2. From a terminal, source `.env` and launch Antigravity:**
-
-For Path A:
-```bash
-source ~/.claude/plugins/marketplaces/payrails-debug-plugin/.env
-open -a "Antigravity" /path/to/your/workspace
-```
-
-For Path B (replace `<plugin-dir>` with your chosen plugin clone path):
-```bash
-cd <plugin-dir>
-source .env
-open -a "Antigravity" /path/to/your/workspace
-```
-
-Replace `/path/to/your/workspace` with your actual project folder (e.g. `~/Documents/Payrails/backend`).
-
-**3. Verify env vars are loaded** (optional but reassuring):
-
-Before the `open -a` line, run:
-```bash
-echo "Pass length: ${#GRAFANA_PASSWORD}"
-```
-Should print a number > 0 (typically 64). If it prints 0, the source didn't work.
+**Permission note:** `gcx login` requires the Grafana **"Assistant CLI User"** role. The platform team grants this to the SE team. If `gcx login` returns **"Access Denied … you need the Assistant CLI User role / `grafana-assistant-app.tokens:access`,"** that's an admin grant — ping Quang Ngo (`@Quang`) to enable it for your account. It is not something you can fix locally.
 
 ---
 
 ## Verifying the install
 
-In a Claude Code session in the relaunched Antigravity, run `/mcp`.
+In a Claude Code session, run `/mcp`.
 
 Expected under "dynamic":
 - `plugin:payrails-debug:plain` — Connected
 - `plugin:payrails-debug:playwright` — Connected
-- `plugin:payrails-debug:grafana` — Connected
 
-You can also run `claude mcp list` from Claude Code's bash tool or any terminal to see the same information.
+**About Grafana:** Grafana is *not* an MCP in this plugin — it's the `gcx` CLI, so it won't appear as a Connected MCP in `/mcp`. (A dormant `plugin:payrails-debug:grafana` MCP may show as needing auth / failed — that's intentional and reserved for future use; ignore it.) To verify Grafana works, run `gcx config check` in a terminal (see Grafana setup) — `oauth` + `online` means you're good.
 
 **About Slack/Linear/Notion**: these are deduplicated against your claude.ai account-level integrations, so they appear in the **claude.ai** section of `/mcp` rather than the **dynamic** section. In `claude mcp list` they may show as "Failed" — that's expected and not a real failure. The functionality is provided through the claude.ai-level connection, not the plugin's. If a Slack/Linear/Notion query in Claude Code works, you're fine.
 
-(See `CONNECTORS.md` for what each MCP is supposed to provide. That file describes design state, not runtime status — for actual runtime, use `/mcp` or `claude mcp list`.)
+(See `CONNECTORS.md` for what each connector is supposed to provide. That file describes design state, not runtime status — for actual runtime, use `/mcp`, `claude mcp list`, or `gcx config check`.)
 
 ---
 
@@ -320,31 +141,12 @@ You can also run `claude mcp list` from Claude Code's bash tool or any terminal 
 
 Once set up, a debugging session looks like:
 
-1. Open a terminal, source `.env`, launch Antigravity from there (or use the shell function below)
-2. In Claude Code, describe the merchant issue you're debugging — Edu's `payrails-debug` skill auto-triggers
-3. Claude works through investigation, hypothesis, diagnosis using Grafana, Plain, Slack, Linear, Notion as needed
+1. Open Antigravity (any way you like — no terminal ritual needed) in your workspace
+2. In Claude Code, describe the merchant issue you're debugging — the `payrails-debug` skill auto-triggers
+3. Claude works through investigation, hypothesis, diagnosis using Grafana (`gcx`), Plain, Slack, Linear, Notion as needed
 4. When done, optionally invoke `/payrails-response-draft` for merchant communication, `/payrails-knowledge-update` to capture learnings, or `/payrails-recurring-issue-doc` to document the pattern in Notion
 
-### Optional shell function (recommended for Path B)
-
-Add this to your `~/.zshrc`. Replace `<plugin-dir>` with your actual chosen plugin clone path (the same one you used in Path B Step 2), and replace `<your-default-workspace>` with your most common debugging folder (e.g. your Payrails backend clone path):
-
-```bash
-function payrails-claude() {
-    cd <plugin-dir>
-    op inject -i .env.tpl -o .env || return 1
-    source .env
-    cd "${1:-<your-default-workspace>}"
-    open -a "Antigravity" .
-}
-```
-
-Reload your shell (`source ~/.zshrc`). Then start any debugging session with one command:
-```bash
-payrails-claude
-```
-
-This handles the credential refresh and terminal-launched Antigravity automatically. The argument is optional — you can run `payrails-claude ~/some/other/folder` to launch in a different workspace.
+Your `gcx login` persists across sessions, so there's nothing to refresh day to day. (If a Grafana query ever fails with an auth error, re-run `gcx login --server https://payrails.grafana.net`.)
 
 ---
 
@@ -352,7 +154,7 @@ This handles the credential refresh and terminal-launched Antigravity automatica
 
 When the maintainer pushes a new version:
 
-**Recommended:** in Antigravity → `/manage-plugins` → Marketplaces tab → click the refresh icon next to `payrails-debug-plugin`. Then Cmd+Q Antigravity and relaunch from your sourced terminal (env vars need to stay loaded).
+**Recommended:** in Antigravity → `/manage-plugins` → Marketplaces tab → click the refresh icon next to `payrails-debug-plugin`. Then Cmd+Q Antigravity and relaunch.
 
 **Fallback:** if the UI refresh doesn't seem to work:
 
@@ -382,16 +184,16 @@ claude plugin install payrails-debug@payrails-debug-plugin
 ```
 Then Cmd+Q Antigravity and reopen. The plugin should now appear in the Plugins tab.
 
-### Grafana MCP shows "Failed"
+### Grafana queries fail or `gcx login` is denied
 
-Most likely cause is one of these. Check in order:
-- **Binary missing**: `ls -la ~/tools/mcp-grafana-official` — should exist and be executable. If not, redo the Grafana binary setup.
-- **Env vars not loaded**: in a terminal, run `echo "Pass length: ${#GRAFANA_PASSWORD}"`. If it prints 0, you haven't sourced `.env` in this shell. Run `source .env` from the right path.
-- **Antigravity launched without env vars**: even if env vars are in your shell, if you launched Antigravity from Spotlight or it was already running with a stale env, Grafana won't see the credentials. Cmd+Q Antigravity completely, then `source .env && open -a Antigravity` from your terminal.
+- **`gcx config check` shows an error / not online:** re-run `gcx login --server https://payrails.grafana.net` (choose OAuth). If a stale `default` context is the only thing erroring, run `gcx config delete-context default`.
+- **`gcx login` returns "Access Denied … Assistant CLI User role required":** your Grafana role lacks the Assistant permission. This is an admin grant — ping Quang Ngo to enable it for your account. Nothing to fix locally.
+- **`gcx: command not found`:** gcx isn't installed or isn't on your PATH — `brew install grafana/grafana/gcx` (see Grafana setup).
+- **A query 403s on a specific resource** (e.g. dashboard *search*): some sub-permissions may not be granted; the skill routes around these (e.g. `dashboards list` instead of `search`). If a core operation (logs/metrics) is blocked, mention it to Quang.
 
-### `open -a "Antigravity"` brought existing instance to foreground instead of launching fresh
+### Cmd+Q vs the red X
 
-That's how `open -a` works on macOS — it doesn't start a new process if one is already running. Cmd+Q Antigravity completely first (verify the dock icon disappears), then re-run the source-and-open commands.
+The red X only hides the window — the Antigravity process keeps running. When a step says to fully quit Antigravity, use **Cmd+Q** (or right-click the dock icon → Quit) and verify the dock icon disappears.
 
 ### Skills don't auto-trigger on debugging requests
 
@@ -423,11 +225,10 @@ If you need to remove every trace of the plugin:
 claude plugin uninstall payrails-debug@payrails-debug-plugin
 rm -rf ~/.claude/plugins/cache/payrails-debug-plugin/
 rm -rf ~/.claude/plugins/marketplaces/payrails-debug-plugin/
-rm -f ~/.claude/plugins/marketplaces/payrails-debug-plugin/.env
 claude plugin marketplace remove payrails-debug-plugin
 ```
 
-Then Cmd+Q Antigravity to clear in-memory plugin state. Optionally also delete the local clone if you used Path B (`rm -rf <plugin-dir>` — replace with your actual chosen clone path) and the Grafana binary (`rm ~/tools/mcp-grafana-official`).
+Then Cmd+Q Antigravity to clear in-memory plugin state. Optionally also remove gcx if you don't use it elsewhere (`brew uninstall gcx`) and your gcx login (`rm -rf ~/.config/gcx`).
 
 The `claude plugin marketplace remove` step is important: it cleans up the marketplace registration in your `~/.claude/settings.json` (under `extraKnownMarketplaces`). Without this step, even after deleting the filesystem clones, Antigravity will see "Marketplace already on disk — declared in user settings" when you try to re-install, blocking a fresh install.
 
@@ -436,7 +237,8 @@ The `claude plugin marketplace remove` step is important: it cleans up the marke
 ## What this plugin does NOT include
 
 - The Payrails MCP (`go run ./cmd/payrails_mcp`) — that lives in the backend repo, requires Go and podman, and is for local Payrails service development. It's separate from this plugin.
-- Direct production-Grafana access — debugging primarily uses staging Grafana (`grafana.telemetry.payrails.io`). Some merchant-specific access patterns may differ; talk to platform team if you need access beyond the default staging path.
+- The hosted Grafana Cloud MCP — Grafana is accessed via the `gcx` CLI, not the hosted MCP (the hosted MCP incurs Grafana Cloud usage cost and isn't budgeted yet). A dormant `grafana` MCP block is kept in config for when that changes; it's intentionally inactive.
+- Both staging and production Grafana data live on the same Cloud stack (`https://payrails.grafana.net`); scope queries to the correct environment/namespace (see `skills/payrails-debug/references/grafana.md`). Talk to the platform team if you need access beyond your default role.
 
 ---
 
