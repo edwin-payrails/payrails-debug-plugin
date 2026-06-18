@@ -70,7 +70,7 @@ Each decision below documents:
 **Context**: Payrails retired self-hosted Grafana (`grafana.telemetry.payrails.io`) and moved to Grafana Cloud (`payrails.grafana.net`), which disables password/basic auth — so the old `mcp-grafana` binary + op-inject'd username/password no longer works. (This is the exact "When to revisit" trigger the op-inject decision anticipated.)
 
 **Alternatives considered**:
-- **Hosted Grafana Cloud MCP** (`mcp.grafana.com`, OAuth) — the cleanest "no binary" option, but (a) gated behind an admin-granted Assistant *MCP* role, and (b) per platform lead Quang Ngo it bills against Grafana Cloud AI usage that isn't budgeted. Deferred; a dormant block is kept in `.mcp.json` for when it's enabled.
+- **Hosted Grafana Cloud MCP** (`mcp.grafana.com`, OAuth) — the cleanest "no binary" option, but (a) gated behind an admin-granted Assistant *MCP* role, and (b) per platform lead Quang Ngo it bills against Grafana Cloud AI usage that isn't budgeted. Deferred; its config is recorded in `CONNECTORS.md` for when it's budgeted (removed from `.mcp.json` because a present-but-unauthenticated MCP confused the agent into reaching for it).
 - **mcp-grafana binary against Cloud + service-account token** — still a binary, still needs an admin-minted token; rejected in favor of the platform team's recommended path (gcx).
 - **The gcx *plugin*** (a separate Claude plugin) — rejected: a whole second plugin install, blocked by the same role gate; we only need the gcx *CLI*, driven by our own skill.
 

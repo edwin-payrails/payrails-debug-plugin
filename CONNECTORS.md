@@ -129,7 +129,7 @@ The plugin declares **6 MCP servers** in `.mcp.json`. They use three different f
 
 **What it is**: Grafana Cloud (`https://payrails.grafana.net`) — Loki logs, Prometheus metrics, Tempo traces, dashboards, alerts — queried through Grafana's official **`gcx` CLI**, which the debugging skill runs in the shell. It is **not** an MCP server.
 
-**Why gcx, not an MCP**: Payrails moved off self-hosted Grafana (retired June 2026) to Grafana Cloud. The hosted Grafana Cloud MCP is deferred (it incurs Grafana Cloud AI-usage cost that isn't budgeted yet), so the platform team's recommended path is the `gcx` CLI. A dormant hosted-MCP block is kept in `.mcp.json` for if/when that's enabled — it's intentionally inactive.
+**Why gcx, not an MCP**: Payrails moved off self-hosted Grafana (retired June 2026) to Grafana Cloud. The hosted Grafana Cloud MCP is deferred (it incurs Grafana Cloud AI-usage cost that isn't budgeted yet), so the platform team's recommended path is the `gcx` CLI. The hosted-MCP block was **removed** from `.mcp.json` — a present-but-unauthenticated MCP confused the agent (it reached for the MCP, hit OAuth, and concluded Grafana was broken) and risked a teammate authorizing it and incurring cost. Its config is recorded under "Future — re-enabling the hosted MCP" below, for if/when it's budgeted.
 
 **Setup**: one-time per person — `brew install grafana/grafana/gcx`, then `gcx login --server https://payrails.grafana.net` (browser OAuth). See [README](./README.md) → "Grafana setup". No binary download, no credentials file, no 1Password, no env vars.
 
@@ -158,6 +158,16 @@ The full command patterns, the real datasource UIDs, the merchant/namespace ladd
 
 5. **cowork (Claude Desktop) is unverified**: whether cowork can run the `gcx` shell command and reach `*.grafana.net` may need an allowlist. Claude Code (Antigravity / Claude Desktop Code) is confirmed working.
 
+**Future — re-enabling the hosted MCP** (only when the platform team budgets the cost): the hosted Grafana Cloud MCP authenticates via OAuth, and the SE "Assistant CLI User" grant already covers the read access its OAuth needs. To bring it back, add this block to `.mcp.json` and have each user authorize once via `/mcp`:
+```json
+"grafana": {
+  "type": "http",
+  "url": "https://mcp.grafana.com/mcp",
+  "headers": { "X-Grafana-URL": "https://payrails.grafana.net" }
+}
+```
+Before adopting it *over* gcx, see the gcx-vs-hosted-MCP decision framework recorded in `BUILD_HANDOFF.md`.
+
 ---
 
 ## Connectors NOT in this plugin
@@ -166,7 +176,7 @@ Things you might expect but aren't included:
 
 - **Payrails MCP** (`go run ./cmd/payrails_mcp`): Lives in the backend repo, requires Go + podman, used for local backend development. Not part of debugging flow.
 
-- **The hosted Grafana Cloud MCP**: not used — Grafana is accessed via the `gcx` CLI (the hosted MCP incurs unbudgeted Grafana Cloud usage cost). A dormant block is kept in `.mcp.json` for the future.
+- **The hosted Grafana Cloud MCP**: not used — Grafana is accessed via the `gcx` CLI (the hosted MCP incurs unbudgeted Grafana Cloud usage cost). Its config is recorded under "Future — re-enabling the hosted MCP" above; it is deliberately **not** in `.mcp.json`.
 
 - **Separate "production Grafana"**: staging and production data now live on the same Grafana Cloud stack (`payrails.grafana.net`); scope queries by environment/namespace. Talk to the platform team for access beyond your role.
 

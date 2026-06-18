@@ -2,9 +2,9 @@
 
 Grafana is Payrails' observability stack — logs (Loki), metrics (Prometheus), traces
 (Tempo), dashboards, and alerts. We query it through the **`gcx` CLI** (Grafana's official
-command-line tool), which you run in the shell. **Do not use any Grafana MCP server** — a
-dormant `grafana` MCP may be declared in config but is intentionally unauthenticated and
-reserved for future use; ignore it and drive every Grafana operation through `gcx`.
+command-line tool), which you run in the shell. **Grafana is not an MCP in this plugin** —
+there is no `grafana` MCP server here, so drive every Grafana operation through the `gcx` CLI.
+(If a `grafana` MCP ever appears from some other source, ignore it — use `gcx`.)
 
 ## Grafana instance
 

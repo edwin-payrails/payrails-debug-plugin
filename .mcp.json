@@ -27,13 +27,6 @@
                 "@playwright/mcp@latest"
             ]
         },
-        "grafana": {
-            "type": "http",
-            "url": "https://mcp.grafana.com/mcp",
-            "headers": {
-                "X-Grafana-URL": "https://payrails.grafana.net"
-            }
-        },
         "temporal": {
             "command": "node",
             "args": [
