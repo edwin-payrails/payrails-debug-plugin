@@ -34,7 +34,7 @@ Each decision below documents:
 
 ## Credential handling: `op inject` outside the agent (not plaintext, not direct `op` calls)
 
-> **⚠️ Superseded for Grafana (2026-06-18)** — Grafana moved to the `gcx` CLI (browser OAuth), which retires op-inject / `.env.tpl` / 1Password for Grafana entirely. See "Grafana access: gcx CLI" below. Grafana was the only consumer of this pattern, so this whole credential apparatus is now inactive. Kept as historical record.
+> **⚠️ Superseded for Grafana (2026-06-18)** — Grafana moved to the `gcx` CLI (browser OAuth), which retires op-inject / `.env.tpl` / 1Password for Grafana. See "Grafana access: gcx CLI" below. Grafana was the only consumer, so this apparatus is **currently inactive** — but the decision and mechanics below are deliberately **kept as the reference design for any *future* MCP that needs injected credentials**. If such an MCP is ever added, reinstate a `.env.tpl` with `op://` placeholders and follow this decision plus the op-inject mechanics still documented in `PLUGIN_LIFECYCLE.md`.
 
 **Decision**: Credentials live in 1Password. The user runs `op inject` outside the agent context (in their own shell) to produce a `.env` file with resolved values, then `source` it before launching Antigravity. Path A (manual `.env`) exists as a simpler alternative.
 
