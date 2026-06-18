@@ -3,6 +3,14 @@
 How to ship a change to the Payrails Debug Plugin, and how to roll one back. This is the
 single home for the release and rollback git flow.
 
+> **⚠️ `.env.tpl` retired (2026-06-18, Grafana → gcx migration).** The release flow below
+> includes a **Chunk 4 / Chunk 9** "revert `.env.tpl` to placeholders before push / restore
+> real refs after merge" step (finding #14). **That no longer applies** — Grafana moved to the
+> `gcx` CLI (browser OAuth), so `.env.tpl` was deleted and there are no committed secrets/refs to
+> guard. **Skip Chunks 4 and 9.** Everything else (branch → bump → commit → PR → merge →
+> distribute, and the rollback playbook) still applies. See the "Grafana → gcx CLI migration"
+> note at the top of `BUILD_HANDOFF.md`.
+
 **What's elsewhere (and why):**
 - **CONTRIBUTING.md** — the contributor model (who can contribute, how learnings flow
   back, semver policy). The short branch→PR list there is the summary; this file is the

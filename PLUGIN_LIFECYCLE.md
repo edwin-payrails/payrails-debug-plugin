@@ -4,6 +4,8 @@ This document describes how the Payrails Debug Plugin actually works under the h
 
 The audience is contributors, maintainers, and anyone debugging unexpected plugin behavior. If you're trying to *use* the plugin, see `README.md`. If you want to know *why* certain choices were made, see `DESIGN_DECISIONS.md`.
 
+> **⚠️ Grafana migrated to the `gcx` CLI (2026-06-18).** Everything in this doc about Grafana *credentials* — the `op inject` / `.env.tpl` flow, the `mcp-grafana` binary install, the "Maintainer commit cycle / finding #14" `.env.tpl` revert-restore, the Grafana-specific Reset-playbook steps, and the env-var launch ritual — is **superseded and kept only as historical record**. Grafana is now accessed via the `gcx` CLI (`gcx login`, browser OAuth — no `.env`, no 1Password, no binary download, no launch ritual), so none of that machinery exists for Grafana anymore. For the current state see the "Grafana → gcx CLI migration" update at the top of `BUILD_HANDOFF.md`, the "Grafana access: gcx CLI" entry in `DESIGN_DECISIONS.md`, and "Grafana setup" in `README.md`. The **non-Grafana** lifecycle content below (install/uninstall/update mechanics, the five state locations, the Temporal MCP) remains accurate.
+
 ---
 
 ## Five locations of state

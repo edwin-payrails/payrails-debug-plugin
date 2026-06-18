@@ -34,6 +34,8 @@ Each decision below documents:
 
 ## Credential handling: `op inject` outside the agent (not plaintext, not direct `op` calls)
 
+> **⚠️ Superseded for Grafana (2026-06-18)** — Grafana moved to the `gcx` CLI (browser OAuth), which retires op-inject / `.env.tpl` / 1Password for Grafana entirely. See "Grafana access: gcx CLI" below. Grafana was the only consumer of this pattern, so this whole credential apparatus is now inactive. Kept as historical record.
+
 **Decision**: Credentials live in 1Password. The user runs `op inject` outside the agent context (in their own shell) to produce a `.env` file with resolved values, then `source` it before launching Antigravity. Path A (manual `.env`) exists as a simpler alternative.
 
 **Alternatives considered**:
@@ -61,7 +63,34 @@ Each decision below documents:
 
 ---
 
+## Grafana access: `gcx` CLI (supersedes op-inject + local-binary, 2026-06-18)
+
+**Decision**: Grafana is accessed via Grafana's official **`gcx` CLI**, run from the shell by the debugging skill and authenticated with `gcx login` (browser OAuth). This **supersedes** both the "Credential handling: op inject" and "No podman containerization" decisions above, for Grafana.
+
+**Context**: Payrails retired self-hosted Grafana (`grafana.telemetry.payrails.io`) and moved to Grafana Cloud (`payrails.grafana.net`), which disables password/basic auth — so the old `mcp-grafana` binary + op-inject'd username/password no longer works. (This is the exact "When to revisit" trigger the op-inject decision anticipated.)
+
+**Alternatives considered**:
+- **Hosted Grafana Cloud MCP** (`mcp.grafana.com`, OAuth) — the cleanest "no binary" option, but (a) gated behind an admin-granted Assistant *MCP* role, and (b) per platform lead Quang Ngo it bills against Grafana Cloud AI usage that isn't budgeted. Deferred; a dormant block is kept in `.mcp.json` for when it's enabled.
+- **mcp-grafana binary against Cloud + service-account token** — still a binary, still needs an admin-minted token; rejected in favor of the platform team's recommended path (gcx).
+- **The gcx *plugin*** (a separate Claude plugin) — rejected: a whole second plugin install, blocked by the same role gate; we only need the gcx *CLI*, driven by our own skill.
+
+**Why gcx CLI**:
+- No credentials on disk, no 1Password, no `.env`/op-inject, no env-var launch ritual — `gcx login` stores an OAuth session in `~/.config/gcx/config.yaml`. This **retires the entire credential-injection apparatus** (op-inject, `.env.tpl`, and finding #14's revert/restore commit cycle).
+- It's the platform team's recommended path for AI/Grafana usage.
+- Same tool surface as the old MCP (logs/metrics/dashboards) plus more (traces, alerts, incidents) — validated against five real debugging cases + a zero-hint fresh-session test.
+
+**Trade-off accepted**: gcx is still a downloaded binary (Homebrew) and is CLI-driven rather than an MCP, so the skill (`references/grafana.md`) must teach the gcx command patterns instead of relying on an MCP's auto-exposed tools. Mitigated by an explicit "try documented patterns first, discover via `gcx --help`, adapt when they don't fit" operating principle in that file.
+
+**Auth dependency**: `gcx login` requires the Grafana "Assistant CLI User" role (admin-granted; not self-service).
+
+**When to revisit**:
+- If/when the hosted Grafana Cloud MCP is budgeted *and* the Assistant MCP role is granted team-wide, we could switch to the no-binary hosted MCP (the dormant `.mcp.json` block is ready). That would change only the skill's *mechanics* back to MCP tool calls — the Payrails domain knowledge in `grafana.md` stays.
+
+---
+
 ## No podman containerization for v1
+
+> **⚠️ Superseded (2026-06-18)** — the `mcp-grafana` local binary is no longer used; Grafana is accessed via the `gcx` CLI. See "Grafana access: gcx CLI" above. Kept as historical record.
 
 **Decision**: The Grafana MCP runs as a local binary on the user's machine (`~/tools/mcp-grafana-official`), not inside a container.
 

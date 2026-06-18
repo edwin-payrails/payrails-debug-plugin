@@ -50,9 +50,10 @@ If the merchant initialises the Google Pay SDK with `environment: "PRODUCTION"` 
 1. Check if agnostic GPay feature flag is enabled for the merchant — check in #payments-acceptance or ask Atakan
 2. Ask merchant to confirm their exact `tokenizationSpecification` (especially `gateway` field)
 3. Ask merchant to confirm `environment` (TEST vs PRODUCTION) in their GPay SDK init
-4. Pull vault logs in Grafana for the specific `x-request-id` to get the exact decryption error
-   - Loki query: `{namespace="<merchant>-vault", cluster="payrails-vault-staging-vault01", component="vault-http"} |= "<vault-correlation-id>"`
-   - First find the vault correlation ID from backend logs: `{merchant_name="<merchant>", app="backend", cluster="payrails-staging-merchant02"} |= "<x-request-id>"`
+4. Pull vault logs in Grafana (via the `gcx` CLI) for the specific `x-request-id` to get the exact decryption error
+   - First find the vault correlation ID from backend logs: `gcx logs query -d grafanacloud-logs '{merchant_name="<merchant>", app="backend"} |= "<x-request-id>"' --since 1h`
+   - Then the vault logs: `gcx logs query -d grafanacloud-logs '{namespace="<merchant>-vault", component="vault-http"} |= "<vault-correlation-id>"' --since 1h`
+   - *(The old self-hosted `cluster=` filters were dropped — cluster names may differ post-Cloud-migration; if a query returns nothing, discover values with `gcx logs labels -d grafanacloud-logs -l cluster`. See `../grafana.md`.)*
 
 ## gatewayMerchantId values confirmed
 
