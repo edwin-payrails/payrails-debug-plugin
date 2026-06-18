@@ -129,7 +129,7 @@ Expected under "dynamic":
 - `plugin:payrails-debug:plain` — Connected
 - `plugin:payrails-debug:playwright` — Connected
 
-**About Grafana:** Grafana is *not* an MCP in this plugin — it's the `gcx` CLI, so it won't appear as a Connected MCP in `/mcp`. (A dormant `plugin:payrails-debug:grafana` MCP may show as needing auth / failed — that's intentional and reserved for future use; ignore it.) To verify Grafana works, run `gcx config check` in a terminal (see Grafana setup) — `oauth` + `online` means you're good.
+**About Grafana:** Grafana is *not* an MCP in this plugin — it's the `gcx` CLI, so it won't appear as a Connected MCP in `/mcp` (there is no `grafana` MCP server in the plugin). To verify Grafana works, run `gcx config check` in a terminal (see Grafana setup) — `oauth` + `online` means you're good.
 
 **About Slack/Linear/Notion**: these are deduplicated against your claude.ai account-level integrations, so they appear in the **claude.ai** section of `/mcp` rather than the **dynamic** section. In `claude mcp list` they may show as "Failed" — that's expected and not a real failure. The functionality is provided through the claude.ai-level connection, not the plugin's. If a Slack/Linear/Notion query in Claude Code works, you're fine.
 
@@ -237,7 +237,7 @@ The `claude plugin marketplace remove` step is important: it cleans up the marke
 ## What this plugin does NOT include
 
 - The Payrails MCP (`go run ./cmd/payrails_mcp`) — that lives in the backend repo, requires Go and podman, and is for local Payrails service development. It's separate from this plugin.
-- The hosted Grafana Cloud MCP — Grafana is accessed via the `gcx` CLI, not the hosted MCP (the hosted MCP incurs Grafana Cloud usage cost and isn't budgeted yet). A dormant `grafana` MCP block is kept in config for when that changes; it's intentionally inactive.
+- The hosted Grafana Cloud MCP — Grafana is accessed via the `gcx` CLI, not the hosted MCP (it incurs Grafana Cloud usage cost, unbudgeted). Its config is documented in `CONNECTORS.md` ("Future — re-enabling the hosted MCP") for when that changes; it is deliberately not in `.mcp.json`.
 - Both staging and production Grafana data live on the same Cloud stack (`https://payrails.grafana.net`); scope queries to the correct environment/namespace (see `skills/payrails-debug/references/grafana.md`). Talk to the platform team if you need access beyond your default role.
 
 ---
