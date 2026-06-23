@@ -132,6 +132,37 @@ Each decision below documents:
 
 ---
 
+## Snowflake access: `mcp-remote` wrapper, not the native OAuth connector
+
+**Decision**: The Snowflake MCP (`DWH.REPORTING.PAYRAILS_SCOPE_MCP`) is wrapped in **`mcp-remote`** (a local stdio proxy) in `.mcp.json`, not declared as a native `type: http` server with an `oauth` block. It authenticates against a **dedicated Snowflake OAuth integration** the Data team created for this (registered for `mcp-remote`'s default callback port `3334` and `/oauth/callback` path), scoped to `session:role:ANALYST`.
+
+**Alternatives considered**:
+- **Native `type: http` + `oauth` block** — the form Snowflake's setup guide documents for Claude Code; what we first shipped.
+- **Claude Desktop's built-in Snowflake connector** — admin-gated and carries a known limitation; ruled out (no admin available).
+- **Asking the Data team to regenerate a `+`-free client id** so the native connector would work — unnecessary once `mcp-remote` solved it, and it wouldn't have fixed Cowork.
+- **PAT / bearer-token auth** (Snowflake's other connectivity path) — viable but needs per-user PATs plus a network policy; heavier for non-technical teammates than browser OAuth.
+
+**Why `mcp-remote`**:
+- **It fixes a client bug.** The Snowflake OAuth client id contains a `+`. Older Claude Code clients (e.g. the Antigravity extension on 2.1.123) put that `+` into the authorize URL *un-percent-encoded*, so Snowflake reads it as a space → "OAuth client integration with the given client id is not found." Verified directly against Snowflake's authorize endpoint. `mcp-remote` runs its own OAuth and percent-encodes correctly (`%2B`), so it works regardless of the host client's version. (A fixed terminal CLI — 2.1.167 — also works natively, but we can't assume every teammate's client is fixed.)
+- **It works in Cowork.** Cowork's native connector surface is admin-gated with no general OAuth connector, but it *does* spawn a local `command:` stdio server from `claude_desktop_config.json` — the same path the plugin's Plain MCP already uses there. `mcp-remote` is a local stdio server, so the same path carries Snowflake. The native `type: http`+`oauth` form does **not** work in Cowork.
+- **One config across surfaces** — terminal, Antigravity, the desktop Code tab, and Cowork all use the same block.
+
+**Trade-offs accepted**:
+- An extra `npx`/node process per session (already true for Plain).
+- The callback port must be free at auth time; if `3334` is occupied, `mcp-remote` silently picks a random port and the redirect no longer matches the registered URI, so auth fails. Don't run two clients through the auth flow at once.
+- The client id is committed in `.mcp.json`. It's a **public** OAuth client identifier (PKCE, no secret), shared openly by the Data team, so this is acceptable — no op-inject needed (contrast "Credential handling" above).
+
+**When to revisit**:
+- If/when all teammate clients are on a Claude Code version that percent-encodes the client id correctly *and* a non-admin-gated OAuth path exists in every surface (incl. Cowork), the native `type: http`+`oauth` block would be simpler.
+- If the Data team rotates to a `+`/`/`-free client id, the native form becomes viable for fixed clients — but `mcp-remote` is still needed for Cowork, so there's little reason to switch.
+
+**Notes for contributors**:
+- The dedicated OAuth integration is **separate** from the one in Snowflake's setup guide (which uses port `3118` + `/callback` for the native flow). Don't conflate the two client ids / ports.
+- Cowork users need the same `snowflake` block in their `claude_desktop_config.json` — the plugin's `.mcp.json` isn't read by Cowork's connector surface the same way. See the Snowflake MCP Access Notion guide.
+- The skill guidance lives in two places **by design** — the standalone `cortex-snowflake` skill (triggers on its own for ad-hoc data questions) and `skills/payrails-debug/references/snowflake.md` (read during debugging). The overlap is intentional; both point at the same MCP and rules.
+
+---
+
 ## Plugin distribution: GitHub-hosted in `payrails-hub` (eventually)
 
 **Decision**: The plugin will ship in a GitHub repo named `payrails-hub` once security review approves it. Currently it lives in `edwin-payrails/payrails-debug-plugin` (a Payrails-affiliated personal namespace) as a stand-in.

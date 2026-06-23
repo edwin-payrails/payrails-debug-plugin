@@ -6,6 +6,7 @@ When you install this plugin, you get:
 - **Debugging skills** — Claude Code knows the Payrails-specific debugging workflow (UNDERSTAND → SEARCH → DIAGNOSE → FIX → ESCALATE)
 - **Grafana (via the `gcx` CLI)** — query Loki logs, Prometheus metrics, Tempo traces, and dashboards from inside Claude Code
 - **Plain MCP** — read merchant support threads
+- **Snowflake MCP** — query Payrails payment data in the warehouse (auth-rate trends, decline-reason analysis, provider performance, anomalies) for historical and aggregate questions; the `cortex-snowflake` skill teaches Claude how to use it
 - **Playwright MCP** — browser automation for looking up provider docs (Adyen, Stripe, etc.)
 - **Slack/Linear/Notion MCPs** — search prior team discussions, issues, and runbooks
 - **Skills for documenting learnings** — capture knowledge from each debugging session into the right reference files
@@ -37,6 +38,10 @@ This plugin can be installed and used in:
 **Required for Grafana** (logs/metrics/traces/dashboards):
 - **Grafana Cloud access** to `https://payrails.grafana.net` — your normal Payrails Grafana account (check your inbox for the invite if you don't have it yet).
 - **The `gcx` CLI** — a one-time install + login, covered in "Grafana setup" below. (No 1Password, no credentials file, no binary download — gcx handles auth via a browser login.)
+
+**Required for Snowflake** (payment-data queries):
+- **Snowflake `ANALYST` access** — request in the **#help** Slack channel. Without it, the MCP connects but every query is denied.
+- **Authentication is a one-time browser login** (OAuth) on first use, then it's remembered. In Claude Code (terminal / Antigravity) it works once you have access. For **Cowork**, follow the cowork steps in the **[Snowflake MCP Access](https://app.notion.com/p/384cc40840c181dd8facc51ca24325ec)** Notion guide.
 
 **Required only if using Playwright MCP** (browser automation for fetching provider docs):
 - **Node.js 18+** — verify with `node --version`. Most Payrails developers already have this. **If Node.js is missing and you don't need browser automation, skip this and continue setup** — the Playwright MCP will fail to load but every other plugin feature works fine. Install Node.js later if you want Playwright.
@@ -128,6 +133,7 @@ In a Claude Code session, run `/mcp`.
 Expected under "dynamic":
 - `plugin:payrails-debug:plain` — Connected
 - `plugin:payrails-debug:playwright` — Connected
+- `plugin:payrails-debug:snowflake` — *Needs authentication* until you complete the one-time browser login (see the Snowflake prerequisite); Connected afterwards. Requires `ANALYST` access or queries will be denied.
 
 **About Grafana:** Grafana is *not* an MCP in this plugin — it's the `gcx` CLI, so it won't appear as a Connected MCP in `/mcp` (there is no `grafana` MCP server in the plugin). To verify Grafana works, run `gcx config check` in a terminal (see Grafana setup) — `oauth` + `online` means you're good.
 
