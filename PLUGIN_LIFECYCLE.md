@@ -249,6 +249,16 @@ Result: the plugin's version shows as Failed in `claude mcp list` (because the d
 
 To verify it's actually working: try a Slack/Linear/Notion query in Claude Code. If it works, you have functional access. If it doesn't, the claude.ai integration itself isn't authenticated — fix that, not the plugin.
 
+### Snowflake MCP — auth model and gotchas
+
+Snowflake is an `npx` stdio MCP wrapped in **`mcp-remote`** (a local proxy to the Snowflake-hosted server). The *why* of this design is in `DESIGN_DECISIONS.md` ("Snowflake access: `mcp-remote`…"); the operational mechanics:
+
+- **Auth is per-user, one-time-ish.** First use opens a browser to log into Snowflake and approve the `ANALYST` role. `mcp-remote` caches the token (access + refresh) in **`~/.mcp-auth`** and refreshes it silently, so it's not re-prompted each session. Re-auth happens only when the refresh token expires (the integration's `OAUTH_REFRESH_TOKEN_VALIDITY`) or the cache is cleared.
+- **"Needs authentication" in `/mcp` is the pre-login state**, not a failure — it connects after the one-time browser login. **"tables … do not exist or are not authorized"** at *query* time means the user lacks the Snowflake `ANALYST` grant (request in #help), not a config problem.
+- **Port `3334` must be free at auth time.** `mcp-remote` listens on `3334` for the OAuth redirect (matching the registered redirect URI). If `3334` is occupied — e.g. a *second* Claude client running its own auth flow — `mcp-remote` silently picks a random port and the redirect no longer matches → "OAuth callback port … in use" / redirect-mismatch. Fix: don't run two clients through Snowflake auth at once; free `3334` (`lsof -ti:3334`).
+- **Cross-client token sharing.** All clients on the machine share `~/.mcp-auth`, so a token minted by one (e.g. terminal `claude`) is reused by others (Antigravity, Cowork) — which is why a client may connect *without* its own browser popup. The flip side: a client's *failed* auth attempt can clobber the shared token; re-auth from a working client restores it.
+- **Cowork needs its own config.** Cowork doesn't read the plugin's `.mcp.json` for this — the same `snowflake` block must be added to `claude_desktop_config.json`. See the Snowflake MCP Access Notion guide (cowork section).
+
 ---
 
 ## Update flow

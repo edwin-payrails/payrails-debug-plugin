@@ -20,6 +20,19 @@
             "type": "http",
             "url": "https://mcp.notion.com/mcp"
         },
+        "snowflake": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "mcp-remote",
+                "https://eb02656.eu-central-1.snowflakecomputing.com/api/v2/databases/DWH/schemas/REPORTING/mcp-servers/PAYRAILS_SCOPE_MCP",
+                "3334",
+                "--static-oauth-client-info",
+                "{\"client_id\":\"vxQ4LhvjrO8gU+1zBVeubuPTwqY=\"}",
+                "--static-oauth-client-metadata",
+                "{\"scope\":\"session:role:ANALYST\"}"
+            ]
+        },
         "playwright": {
             "command": "npx",
             "args": [

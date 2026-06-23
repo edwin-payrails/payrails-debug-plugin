@@ -12,6 +12,12 @@ CLAUDE.local.md
 # macOS
 .DS_Store
 
+# Temporal MCP offload cache — created at runtime in the project dir, 24h TTL, never commit
+.payrails-temporal-cache/
+
+# Playwright MCP runtime output dir — created when the browser tool runs, never commit
+.playwright-mcp/
+
 # Maintainer-local working files (not for the public plugin)
 grafana.md.backup
 payrails-backend-github-setup.md

@@ -8,7 +8,7 @@ If you're trying to install the plugin, see the [README](./README.md) instead. T
 
 ## Connector overview
 
-The plugin declares **6 MCP servers** in `.mcp.json`. They use three different formats reflecting each connector's reality:
+The plugin declares **7 MCP servers** in `.mcp.json` (Plain, Slack, Linear, Notion, Snowflake, Playwright, Temporal), plus Grafana via the `gcx` CLI (not an MCP). They use several formats reflecting each connector's reality:
 
 | Connector | Format | Auth | Purpose |
 |---|---|---|---|
@@ -16,7 +16,9 @@ The plugin declares **6 MCP servers** in `.mcp.json`. They use three different f
 | Slack | HTTP (Anthropic-hosted) | OAuth | Search prior team discussions |
 | Linear | HTTP (Anthropic-hosted) | OAuth | Search/read issues, bugs, feature requests |
 | Notion | HTTP (Anthropic-hosted) | OAuth | Search runbooks, post-mortems, documentation |
+| Snowflake | npx stdio (`mcp-remote` → Snowflake-hosted) | Browser OAuth (via `mcp-remote`) | Query warehouse payment data — trends, declines, anomalies, merchant metrics |
 | Playwright | npx stdio (local Node.js) | None | Browser automation for fetching JS-rendered content |
+| Temporal | node stdio (bundled local server) | None (internal cluster routing) | Workflow execution state, history, payload decode |
 | Grafana | **`gcx` CLI** (shell tool, not an MCP) | Browser OAuth (`gcx login`) | Query Loki logs, Prometheus metrics, Tempo traces, dashboards |
 
 ---
@@ -98,6 +100,34 @@ The plugin declares **6 MCP servers** in `.mcp.json`. They use three different f
 **What it provides**: Search runbooks, post-mortems, internal docs. Also writes to the "Merchant Debugging Patterns" Notion database when the `payrails-recurring-issue-doc` skill is invoked (database ID: `47141def-527d-46b8-bbc8-f3ee7688feb3`).
 
 **Caveat**: Same deduplication behavior as Slack/Linear if you have claude.ai-level Notion connected.
+
+---
+
+## Snowflake MCP
+
+**What it is**: Queries Payrails payment, billing, and anomaly data in Snowflake — the Snowflake-managed MCP server `DWH.REPORTING.PAYRAILS_SCOPE_MCP`. It's the source of truth for **historical and aggregate** payment data.
+
+**Configuration** (wrapped in `mcp-remote`, a local stdio proxy):
+```json
+"snowflake": {
+  "command": "npx",
+  "args": [
+    "-y", "mcp-remote",
+    "https://eb02656.eu-central-1.snowflakecomputing.com/api/v2/databases/DWH/schemas/REPORTING/mcp-servers/PAYRAILS_SCOPE_MCP",
+    "3334",
+    "--static-oauth-client-info", "{\"client_id\":\"vxQ4LhvjrO8gU+1zBVeubuPTwqY=\"}",
+    "--static-oauth-client-metadata", "{\"scope\":\"session:role:ANALYST\"}"
+  ]
+}
+```
+
+**Why `mcp-remote` and not a plain `type: http` + `oauth` block**: the native Claude Code OAuth connector mis-encodes the `+` in the Snowflake client id on older clients (it sends a raw `+`, which a URL reads as a space → Snowflake returns "client id not found"), and the Claude desktop app's *native* Snowflake connector is admin-gated. `mcp-remote` (a local stdio proxy) runs its own OAuth — it percent-encodes the client id correctly and works across Claude Code (terminal / Antigravity), the desktop Code tab, **and Cowork**. The Data team set up a dedicated OAuth integration for this, registered for `mcp-remote`'s default callback port `3334` and its `/oauth/callback` path.
+
+**Authentication**: first use opens a browser to log into Snowflake and approve the `ANALYST` role; the token is cached (`~/.mcp-auth`) and refreshed automatically. Requires Snowflake **`ANALYST` access** (request in #help) — without it the MCP connects but queries are denied. The client id above is a *public* OAuth client identifier (no secret), so it's safe to commit.
+
+**What it provides**: seven tools — five Cortex Analyst NL→SQL tools (`reporting-management`, `reporting-merchant`, `dwh-curated`, `dwh-core`, `anomaly-detection`), `execute-sql` (the only one that returns rows), and `payments-knowledge-base` (industry benchmarks). Tool selection and usage live in the `cortex-snowflake` skill and `skills/payrails-debug/references/snowflake.md`.
+
+**Caveats**: the Cortex Analyst tools only *generate* SQL — run it via `execute-sql` to get rows. Snowflake data lags real time (use it for patterns/trends, not "this payment right now"). For **Cowork**, the same block must also be added to `claude_desktop_config.json` — see the [Snowflake MCP Access](https://app.notion.com/p/384cc40840c181dd8facc51ca24325ec) Notion guide.
 
 ---
 
@@ -194,7 +224,9 @@ The plugin install only sets up MCP **declarations**. Some MCPs need additional 
 | Slack | First-use OAuth (one click) |
 | Linear | First-use OAuth (one click) |
 | Notion | First-use OAuth (one click) |
+| Snowflake | First-use browser OAuth (one login, then cached). Requires the `ANALYST` Snowflake role (request in #help). For Cowork, also add the block to `claude_desktop_config.json`. |
 | Playwright | None (npx fetches package) |
+| Temporal | None (configured via `.mcp.json`). |
 | Grafana | One-time: `brew install grafana/grafana/gcx` + `gcx login` (browser OAuth). Requires the "Assistant CLI User" Grafana role (admin-granted). See README. |
 
 If something isn't working: check `/mcp` in Claude Code — it will show which MCPs are Connected vs Failed vs Needs Auth.
