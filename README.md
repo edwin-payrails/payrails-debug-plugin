@@ -41,7 +41,7 @@ This plugin can be installed and used in:
 
 **Required for Snowflake** (payment-data queries):
 - **Snowflake `ANALYST` access** — request in the **#help** Slack channel. Without it, the MCP connects but every query is denied.
-- **Authentication is a one-time browser login** (OAuth) on first use, then it's remembered. In Claude Code (terminal / Antigravity) it works once you have access. For **Cowork**, follow the cowork steps in the **[Snowflake MCP Access](https://app.notion.com/p/384cc40840c181dd8facc51ca24325ec)** Notion guide.
+- **Authentication is a one-time browser login** (OAuth) on first use, then it's remembered. It works the same across Claude Code (terminal / Antigravity) and **Cowork** — the GitHub-installed plugin carries Snowflake into Cowork too, nothing extra to add. (Background on the access setup is in the **[Snowflake MCP Access](https://app.notion.com/p/384cc40840c181dd8facc51ca24325ec)** Notion guide.)
 
 **Required only if using Playwright MCP** (browser automation for fetching provider docs):
 - **Node.js 18+** — verify with `node --version`. Most Payrails developers already have this. **If Node.js is missing and you don't need browser automation, skip this and continue setup** — the Playwright MCP will fail to load but every other plugin feature works fine. Install Node.js later if you want Playwright.
