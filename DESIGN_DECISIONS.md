@@ -107,7 +107,7 @@ Each decision below documents:
 **Trade-offs accepted**:
 - Adds a local Node/npx subprocess and an OAuth token cache under `~/.mcp-auth/` (same as Plain/Snowflake).
 - The bridge version is currently **unpinned** (`-y mcp-remote`, matching Plain/Snowflake) → non-deterministic across machines. Pinning (`mcp-remote@<version>`) is the recommended hardening for all three; not yet done.
-- For Cowork, the expectation is that the **GitHub-installed plugin alone** carries the connector (same as Snowflake) — `claude_desktop_config.json` is only a pre-push testing aid, not a per-user step. This is **pending verification** on a GitHub-installed plugin in Cowork; if it turns out Cowork does *not* auto-load plugin stdio MCPs, the per-user `claude_desktop_config.json` step returns (see the Cowork note in `CONNECTORS.md`).
+- For Cowork, the **GitHub-installed plugin alone** carries the connector (same as Snowflake) — `claude_desktop_config.json` is only a pre-push testing aid, not a per-user step. **Verified 2026-06-25**: the installed plugin's `grafana` and `snowflake` connected in Cowork with no `claude_desktop_config.json` entry (see the Cowork note in `CONNECTORS.md`).
 
 **Note on the docs**: this transport change is mechanics-only. `skills/payrails-debug/references/grafana.md` and `SKILL.md` are **unchanged** — every tool name, UID, and query pattern is identical because it's the same server reached the same-named (`grafana`) way.
 
@@ -171,7 +171,7 @@ Each decision below documents:
 
 **Why `mcp-remote`**:
 - **It fixes a client bug.** The Snowflake OAuth client id contains a `+`. Older Claude Code clients (e.g. the Antigravity extension on 2.1.123) put that `+` into the authorize URL *un-percent-encoded*, so Snowflake reads it as a space → "OAuth client integration with the given client id is not found." Verified directly against Snowflake's authorize endpoint. `mcp-remote` runs its own OAuth and percent-encodes correctly (`%2B`), so it works regardless of the host client's version. (A fixed terminal CLI — 2.1.167 — also works natively, but we can't assume every teammate's client is fixed.)
-- **It works in Cowork.** Cowork's native connector surface is admin-gated with no general OAuth connector, but it *does* spawn a local `command:` stdio server from `claude_desktop_config.json` — the same path the plugin's Plain MCP already uses there. `mcp-remote` is a local stdio server, so the same path carries Snowflake. The native `type: http`+`oauth` form does **not** work in Cowork.
+- **It works in Cowork.** Cowork's native connector surface is admin-gated with no general OAuth connector, but it *does* spawn local `command:` stdio servers — and it reads them from the **plugin's `.mcp.json`** (verified 2026-06-25: the GitHub-installed plugin's `snowflake` and `grafana` connected in Cowork with no `claude_desktop_config.json` entry). `mcp-remote` is a local stdio server, so that path carries Snowflake. The native `type: http`+`oauth` form does **not** work in Cowork.
 - **One config across surfaces** — terminal, Antigravity, the desktop Code tab, and Cowork all use the same block.
 
 **Trade-offs accepted**:
@@ -185,7 +185,7 @@ Each decision below documents:
 
 **Notes for contributors**:
 - The dedicated OAuth integration is **separate** from the one in Snowflake's setup guide (which uses port `3118` + `/callback` for the native flow). Don't conflate the two client ids / ports.
-- Cowork users need the same `snowflake` block in their `claude_desktop_config.json` — the plugin's `.mcp.json` isn't read by Cowork's connector surface the same way. See the Snowflake MCP Access Notion guide.
+- Cowork reads the plugin's `.mcp.json` (verified 2026-06-25), so the GitHub-installed plugin carries Snowflake into Cowork — **no** per-user `claude_desktop_config.json` block needed. Dropping the block into `claude_desktop_config.json` is only a maintainer **pre-push testing aid** (one of the three pre-push test places — see the Cowork note in `CONNECTORS.md`).
 - The skill guidance lives in two places **by design** — the standalone `cortex-snowflake` skill (triggers on its own for ad-hoc data questions) and `skills/payrails-debug/references/snowflake.md` (read during debugging). The overlap is intentional; both point at the same MCP and rules.
 
 ---
