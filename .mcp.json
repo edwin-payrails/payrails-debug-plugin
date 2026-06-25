@@ -54,6 +54,11 @@
                 "TEMPORAL_CODEC_STAGING_MULTITENANT": "https://multitenant-api.staging.payrails.io/merchant/temporal/codec/decode",
                 "TEMPORAL_CODEC_PRODUCTION": "https://api.payrails.io/merchant/temporal/codec/decode"
             }
+        },
+        "grafana": {
+            "type": "http",
+            "url": "https://mcp.grafana.com/mcp",
+            "headers": { "X-Grafana-URL": "https://payrails.grafana.net" }
         }
     }
 }

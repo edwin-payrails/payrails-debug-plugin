@@ -65,6 +65,8 @@ Each decision below documents:
 
 ## Grafana access: `gcx` CLI (supersedes op-inject + local-binary, 2026-06-18)
 
+> **⚠️ Superseded 2026-06-25** — Quang approved the hosted Grafana Cloud MCP, so Grafana now uses the **Grafana MCP** (`https://mcp.grafana.com/mcp`, browser OAuth), not the gcx CLI. This entry is kept as the rationale *and* the documented **fallback** (gcx needs no MCP-usage budget and avoids the agent-discovery confusion if ever reconsidered). The gcx↔MCP comparison is in `BUILD_HANDOFF.md`; the gcx `grafana.md` is preserved (`grafana.md.gcx-backup`, gitignored, + git history).
+
 **Decision**: Grafana is accessed via Grafana's official **`gcx` CLI**, run from the shell by the debugging skill and authenticated with `gcx login` (browser OAuth). This **supersedes** both the "Credential handling: op inject" and "No podman containerization" decisions above, for Grafana.
 
 **Context**: Payrails retired self-hosted Grafana (`grafana.telemetry.payrails.io`) and moved to Grafana Cloud (`payrails.grafana.net`), which disables password/basic auth — so the old `mcp-grafana` binary + op-inject'd username/password no longer works. (This is the exact "When to revisit" trigger the op-inject decision anticipated.)

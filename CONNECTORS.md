@@ -8,7 +8,7 @@ If you're trying to install the plugin, see the [README](./README.md) instead. T
 
 ## Connector overview
 
-The plugin declares **7 MCP servers** in `.mcp.json` (Plain, Slack, Linear, Notion, Snowflake, Playwright, Temporal), plus Grafana via the `gcx` CLI (not an MCP). They use several formats reflecting each connector's reality:
+The plugin declares **8 MCP servers** in `.mcp.json` (Plain, Slack, Linear, Notion, Snowflake, Playwright, Temporal, Grafana). They use several formats reflecting each connector's reality:
 
 | Connector | Format | Auth | Purpose |
 |---|---|---|---|
@@ -19,7 +19,7 @@ The plugin declares **7 MCP servers** in `.mcp.json` (Plain, Slack, Linear, Noti
 | Snowflake | npx stdio (`mcp-remote` → Snowflake-hosted) | Browser OAuth (via `mcp-remote`) | Query warehouse payment data — trends, declines, anomalies, merchant metrics |
 | Playwright | npx stdio (local Node.js) | None | Browser automation for fetching JS-rendered content |
 | Temporal | node stdio (bundled local server) | None (internal cluster routing) | Workflow execution state, history, payload decode |
-| Grafana | **`gcx` CLI** (shell tool, not an MCP) | Browser OAuth (`gcx login`) | Query Loki logs, Prometheus metrics, Tempo traces, dashboards |
+| Grafana | HTTP (hosted Grafana Cloud MCP) | Browser OAuth (first use) | Query Loki logs, Prometheus metrics, Tempo traces, dashboards |
 
 ---
 
@@ -155,40 +155,11 @@ The plugin declares **7 MCP servers** in `.mcp.json` (Plain, Slack, Linear, Noti
 
 ---
 
-## Grafana (`gcx` CLI — not an MCP)
+## Grafana MCP
 
-**What it is**: Grafana Cloud (`https://payrails.grafana.net`) — Loki logs, Prometheus metrics, Tempo traces, dashboards, alerts — queried through Grafana's official **`gcx` CLI**, which the debugging skill runs in the shell. It is **not** an MCP server.
+**What it is**: Grafana Cloud (`https://payrails.grafana.net`) — Loki logs, Prometheus metrics, Tempo traces, dashboards, alerts — via the **hosted Grafana Cloud MCP** (`https://mcp.grafana.com/mcp`), declared as `grafana` in `.mcp.json`. Its tools (`query_loki_logs`, `query_prometheus`, `search_dashboards`, the `tempo_*` trace tools, etc.) are exposed to the agent directly.
 
-**Why gcx, not an MCP**: Payrails moved off self-hosted Grafana (retired June 2026) to Grafana Cloud. The hosted Grafana Cloud MCP is deferred (it incurs Grafana Cloud AI-usage cost that isn't budgeted yet), so the platform team's recommended path is the `gcx` CLI. The hosted-MCP block was **removed** from `.mcp.json` — a present-but-unauthenticated MCP confused the agent (it reached for the MCP, hit OAuth, and concluded Grafana was broken) and risked a teammate authorizing it and incurring cost. Its config is recorded under "Future — re-enabling the hosted MCP" below, for if/when it's budgeted.
-
-**Setup**: one-time per person — `brew install grafana/grafana/gcx`, then `gcx login --server https://payrails.grafana.net` (browser OAuth). See [README](./README.md) → "Grafana setup". No binary download, no credentials file, no 1Password, no env vars.
-
-**Authentication**: browser OAuth via `gcx login` (token stored in `~/.config/gcx/config.yaml`). Requires the Grafana **"Assistant CLI User"** role — admin-granted by the platform team. If `gcx login` is denied, that's a role grant, not a config issue.
-
-**What it provides** (run `gcx <group> --help` to discover more):
-- `gcx datasources list` — inventory of datasources + their UIDs
-- `gcx logs query` / `gcx logs labels` — LogQL queries + label discovery (Loki)
-- `gcx metrics query` / `gcx metrics labels` — PromQL queries (Prometheus)
-- `gcx traces query` / `gcx traces get` — TraceQL / trace lookup (Tempo) — newly available on Cloud
-- `gcx dashboards list` / `gcx dashboards get` — find + read dashboards and their panel queries
-- `gcx alert ...` / `gcx irm ...` — alert rules, incidents, on-call
-- `gcx api <path>` — authenticated raw Grafana API (e.g. resolving a shared `/goto/<uid>` link)
-
-The full command patterns, the real datasource UIDs, the merchant/namespace ladder, and gotchas live in the skill's reference file `skills/payrails-debug/references/grafana.md`.
-
-**Caveats**:
-
-1. **Auth is admin-gated**: `gcx login` needs the "Assistant CLI User" role (auto-granted only to Editor+; SE-team Viewers need it granted explicitly). Ping the platform team if denied.
-
-2. **`gcx config check` may show a stale `default` context** as invalid — harmless; the active context is `payrails`. Clean it with `gcx config delete-context default`.
-
-3. **Dashboard `search` is 403** for the SE role (a separate search-API permission) — use `gcx dashboards list` + client-side filter instead.
-
-4. **Operational gotchas**: pass datasource **UID, not name**, to `-d`; add `2>/dev/null` when piping (gcx writes hints to stderr); large results spill to a temp `gcx-results-*.json` file; `--since` rejects multi-day values (use `--from now-720h`). See grafana.md.
-
-5. **cowork (Claude Desktop) is unverified**: whether cowork can run the `gcx` shell command and reach `*.grafana.net` may need an allowlist. Claude Code (Antigravity / Claude Desktop Code) is confirmed working.
-
-**Future — re-enabling the hosted MCP** (only when the platform team budgets the cost): the hosted Grafana Cloud MCP authenticates via OAuth, and the SE "Assistant CLI User" grant already covers the read access its OAuth needs. To bring it back, add this block to `.mcp.json` and have each user authorize once via `/mcp`:
+**Configuration** (in `.mcp.json`):
 ```json
 "grafana": {
   "type": "http",
@@ -196,7 +167,30 @@ The full command patterns, the real datasource UIDs, the merchant/namespace ladd
   "headers": { "X-Grafana-URL": "https://payrails.grafana.net" }
 }
 ```
-Before adopting it *over* gcx, see the gcx-vs-hosted-MCP decision framework recorded in `BUILD_HANDOFF.md`.
+
+**Authentication**: browser **OAuth** on first use — the agent surfaces an authorize URL; the user clicks **Allow** (Read access). No binary, no credentials file, no env vars. Requires the Grafana **"Assistant"** role (admin-granted by the platform team); if authorization is denied, that's a role grant, not a config issue. *(History: this stack briefly used the `gcx` CLI while the hosted MCP was cost-deferred; the platform team has since approved the MCP. The gcx approach + a gcx-vs-MCP comparison are preserved in `BUILD_HANDOFF.md` and the git history of `grafana.md` in case it's ever revisited.)*
+
+**What it provides** (a rich, auto-advertised tool surface):
+- `list_datasources` — datasources + UIDs (Prometheus `grafanacloud-prom`, Loki `grafanacloud-logs`, Tempo `grafanacloud-traces`)
+- `query_loki_logs` / `list_loki_label_values` / `query_loki_stats` — LogQL + label discovery (Loki)
+- `query_prometheus` / `list_prometheus_label_values` — PromQL (Prometheus)
+- `tempo_traceql-search` / `tempo_get-trace` / `tempo_get-attribute-*` — traces (Tempo)
+- `search_dashboards` / `get_dashboard_panel_queries` / `get_dashboard_summary` / `run_panel_query` — dashboards
+- alert / incident / on-call / Sift tools; `ask_assistant` (natural-language to Grafana Assistant)
+
+The query patterns, real datasource UIDs, the merchant/namespace ladder, and gotchas live in `skills/payrails-debug/references/grafana.md`.
+
+**Caveats / gotchas**:
+
+1. **Auth is admin-gated**: needs the Grafana "Assistant" role. Ping the platform team if the authorize page denies you.
+
+2. **Time-param names differ per tool**: Loki uses `startRfc3339`/`endRfc3339`; Prometheus uses `startTime`/`endTime` (relative `now-1h` ok; `endTime` required); Tempo uses `start`/`end`. There is no `since`.
+
+3. **Loki 30-day window + response-size cap**: aggregate inside LogQL (`sum by(...) (count_over_time(... | json [30d]))` with `queryType="instant"`) instead of dumping raw lines; pre-check cheaply with `query_loki_stats` / `list_loki_label_values`.
+
+4. **`up` doesn't cover backend app jobs** (only infra); the `job` label is namespaced (`backend-stable-<service>-http`), so `up{job="backend"}` is empty — query a real app metric for backend health. See grafana.md.
+
+5. **Dashboard `search` works** for the SE role via the MCP (it was 403 via the earlier gcx path — a real behavioral difference between the two access methods).
 
 ---
 
@@ -205,8 +199,6 @@ Before adopting it *over* gcx, see the gcx-vs-hosted-MCP decision framework reco
 Things you might expect but aren't included:
 
 - **Payrails MCP** (`go run ./cmd/payrails_mcp`): Lives in the backend repo, requires Go + podman, used for local backend development. Not part of debugging flow.
-
-- **The hosted Grafana Cloud MCP**: not used — Grafana is accessed via the `gcx` CLI (the hosted MCP incurs unbudgeted Grafana Cloud usage cost). Its config is recorded under "Future — re-enabling the hosted MCP" above; it is deliberately **not** in `.mcp.json`.
 
 - **Separate "production Grafana"**: staging and production data now live on the same Grafana Cloud stack (`payrails.grafana.net`); scope queries by environment/namespace. Talk to the platform team for access beyond your role.
 
@@ -227,6 +219,6 @@ The plugin install only sets up MCP **declarations**. Some MCPs need additional 
 | Snowflake | First-use browser OAuth (one login, then cached). Requires the `ANALYST` Snowflake role (request in #help). For Cowork, also add the block to `claude_desktop_config.json`. |
 | Playwright | None (npx fetches package) |
 | Temporal | None (configured via `.mcp.json`). |
-| Grafana | One-time: `brew install grafana/grafana/gcx` + `gcx login` (browser OAuth). Requires the "Assistant CLI User" Grafana role (admin-granted). See README. |
+| Grafana | One-time: authorize the `grafana` MCP via the OAuth link on first use (click Allow). Requires the Grafana "Assistant" role (admin-granted). See README. |
 
 If something isn't working: check `/mcp` in Claude Code — it will show which MCPs are Connected vs Failed vs Needs Auth.

@@ -4,7 +4,7 @@ A Claude Code plugin for the Payrails Solutions Engineering team that packages m
 
 When you install this plugin, you get:
 - **Debugging skills** — Claude Code knows the Payrails-specific debugging workflow (UNDERSTAND → SEARCH → DIAGNOSE → FIX → ESCALATE)
-- **Grafana (via the `gcx` CLI)** — query Loki logs, Prometheus metrics, Tempo traces, and dashboards from inside Claude Code
+- **Grafana MCP** — query Loki logs, Prometheus metrics, Tempo traces, and dashboards from inside Claude Code
 - **Plain MCP** — read merchant support threads
 - **Snowflake MCP** — query Payrails payment data in the warehouse (auth-rate trends, decline-reason analysis, provider performance, anomalies) for historical and aggregate questions; the `cortex-snowflake` skill teaches Claude how to use it
 - **Playwright MCP** — browser automation for looking up provider docs (Adyen, Stripe, etc.)
@@ -20,7 +20,7 @@ The plugin installs at **user scope**, meaning once installed it works in any fo
 This plugin can be installed and used in:
 - **Antigravity** (the IDE) with Claude Code — primary supported environment; this README covers it
 - **Standalone Claude Code CLI** (`claude` command in a terminal) — also supported
-- **Claude Desktop (cowork)** — supported via the cowork UI. Follow the separate **[Claude Desktop setup guide](./payrails-debug-plugin-setup.md)** instead of this README's install steps (the cowork UI flow differs). The Grafana (`gcx`) setup is the same in both.
+- **Claude Desktop (cowork)** — supported via the cowork UI. Follow the separate **[Claude Desktop setup guide](./payrails-debug-plugin-setup.md)** instead of this README's install steps (the cowork UI flow differs). The Grafana setup (authorize the MCP) is the same in both.
 
 **Not supported:**
 - Claude Desktop app's *Claude Code mode* — that mode only loads Anthropic-curated plugins, not arbitrary GitHub-hosted ones. (Cowork, listed above, is a different surface and does work.)
@@ -37,7 +37,7 @@ This plugin can be installed and used in:
 
 **Required for Grafana** (logs/metrics/traces/dashboards):
 - **Grafana Cloud access** to `https://payrails.grafana.net` — your normal Payrails Grafana account (check your inbox for the invite if you don't have it yet).
-- **The `gcx` CLI** — a one-time install + login, covered in "Grafana setup" below. (No 1Password, no credentials file, no binary download — gcx handles auth via a browser login.)
+- **Nothing to install for Grafana** — the Grafana MCP authorizes via a one-time browser click on first use (see "Grafana setup" below). Requires the Grafana **"Assistant"** role (admin-granted by the platform team).
 
 **Required for Snowflake** (payment-data queries):
 - **Snowflake `ANALYST` access** — request in the **#help** Slack channel. Without it, the MCP connects but every query is denied.
@@ -47,7 +47,7 @@ This plugin can be installed and used in:
 - **Node.js 18+** — verify with `node --version`. Most Payrails developers already have this. **If Node.js is missing and you don't need browser automation, skip this and continue setup** — the Playwright MCP will fail to load but every other plugin feature works fine. Install Node.js later if you want Playwright.
 
 **Convenience:**
-- **Homebrew** — the macOS package manager. Not strictly required, but the easiest way to install `gh`, `gcx`, or `node` if you don't have them. Install from `https://brew.sh`.
+- **Homebrew** — the macOS package manager. Not strictly required, but the easiest way to install `gh` or `node` if you don't have them. Install from `https://brew.sh`.
 
 If any required prerequisite is missing, install it before continuing. The plugin install will succeed without these, but features depending on them will silently fail or be limited.
 
@@ -92,37 +92,17 @@ After install, fully quit Antigravity (Cmd+Q, not the red X — see the Cmd+Q no
 
 ---
 
-## Grafana setup (`gcx` CLI)
+## Grafana setup (Grafana MCP)
 
-Grafana is queried through the **`gcx` CLI** (Grafana's official command-line tool), which Claude runs in the shell. This is a one-time, per-person setup — **no credentials file, no 1Password, no binary download, no special launch ritual.**
+Grafana is provided by the plugin's **Grafana MCP** (the hosted Grafana Cloud MCP, declared in the plugin's `.mcp.json`). Setup is just a **one-time browser authorization** — no binary, no login command, no credentials file, no terminal commands.
 
-**1. Install gcx** (one-time):
+1. After installing/updating the plugin and restarting, the first time Claude uses Grafana it surfaces an OAuth **authorize URL** (trigger it by asking Claude to "list the Grafana datasources").
+2. Open the URL → **Allow access** (you'll see **Read access** — allow it; "Write access — you do not have permission" is expected, we only read).
+3. Confirm in `/mcp` that `grafana` shows **Connected**.
 
-```bash
-brew install grafana/grafana/gcx
-```
+The authorization persists across sessions — nothing to refresh day to day.
 
-(For non-Homebrew options, see `https://github.com/grafana/gcx#installation`.)
-
-**2. Log in** (one-time — browser OAuth with your normal Grafana account):
-
-```bash
-gcx login --server https://payrails.grafana.net
-```
-
-Choose the **OAuth (browser)** option and approve in the browser. When it asks for an optional "Grafana Cloud API token," just press Enter to skip — it's not needed for debugging.
-
-**3. Verify:**
-
-```bash
-gcx config check
-```
-
-Expected: `Auth method: oauth`, `Connectivity: online`, current context `payrails`, and a Grafana version. *(If you also see a separate `default` context reported as invalid, that's a harmless leftover — run `gcx config delete-context default`. Your active context is `payrails`.)*
-
-That's it. gcx stores your login under `~/.config/gcx/config.yaml`, so it works in **any** Claude Code session regardless of how you launched Antigravity — no env vars, no terminal ritual, nothing to re-source.
-
-**Permission note:** `gcx login` requires the Grafana **"Assistant CLI User"** role. The platform team grants this to the SE team. If `gcx login` returns **"Access Denied … you need the Assistant CLI User role / `grafana-assistant-app.tokens:access`,"** that's an admin grant — ping Quang Ngo (`@Quang`) to enable it for your account. It is not something you can fix locally.
+**Permission note:** authorizing requires the Grafana **"Assistant"** role (admin-granted by the platform team). If the authorize page denies you, ping Quang Ngo (`@Quang`) — it's a role grant, not a config fix.
 
 ---
 
@@ -135,11 +115,11 @@ Expected under "dynamic":
 - `plugin:payrails-debug:playwright` — Connected
 - `plugin:payrails-debug:snowflake` — *Needs authentication* until you complete the one-time browser login (see the Snowflake prerequisite); Connected afterwards. Requires `ANALYST` access or queries will be denied.
 
-**About Grafana:** Grafana is *not* an MCP in this plugin — it's the `gcx` CLI, so it won't appear as a Connected MCP in `/mcp` (there is no `grafana` MCP server in the plugin). To verify Grafana works, run `gcx config check` in a terminal (see Grafana setup) — `oauth` + `online` means you're good.
+**About Grafana:** the `grafana` MCP appears under "dynamic" once authorized — `plugin:payrails-debug:grafana` → **Connected**. On first use it shows as needing auth until you complete the one-time OAuth click (see Grafana setup).
 
 **About Slack/Linear/Notion**: these are deduplicated against your claude.ai account-level integrations, so they appear in the **claude.ai** section of `/mcp` rather than the **dynamic** section. In `claude mcp list` they may show as "Failed" — that's expected and not a real failure. The functionality is provided through the claude.ai-level connection, not the plugin's. If a Slack/Linear/Notion query in Claude Code works, you're fine.
 
-(See `CONNECTORS.md` for what each connector is supposed to provide. That file describes design state, not runtime status — for actual runtime, use `/mcp`, `claude mcp list`, or `gcx config check`.)
+(See `CONNECTORS.md` for what each connector is supposed to provide. That file describes design state, not runtime status — for actual runtime, use `/mcp` or `claude mcp list`.)
 
 ---
 
@@ -149,10 +129,10 @@ Once set up, a debugging session looks like:
 
 1. Open Antigravity (any way you like — no terminal ritual needed) in your workspace
 2. In Claude Code, describe the merchant issue you're debugging — the `payrails-debug` skill auto-triggers
-3. Claude works through investigation, hypothesis, diagnosis using Grafana (`gcx`), Plain, Slack, Linear, Notion as needed
+3. Claude works through investigation, hypothesis, diagnosis using Grafana, Plain, Slack, Linear, Notion as needed
 4. When done, optionally invoke `/payrails-response-draft` for merchant communication, `/payrails-knowledge-update` to capture learnings, or `/payrails-recurring-issue-doc` to document the pattern in Notion
 
-Your `gcx login` persists across sessions, so there's nothing to refresh day to day. (If a Grafana query ever fails with an auth error, re-run `gcx login --server https://payrails.grafana.net`.)
+Your Grafana authorization persists across sessions, so there's nothing to refresh day to day. (If a Grafana query ever fails with an auth error, ask Claude to use Grafana again to re-surface the OAuth authorize link, and Allow access.)
 
 ---
 
@@ -190,11 +170,11 @@ claude plugin install payrails-debug@payrails-debug-plugin
 ```
 Then Cmd+Q Antigravity and reopen. The plugin should now appear in the Plugins tab.
 
-### Grafana queries fail or `gcx login` is denied
+### Grafana queries fail or the `grafana` MCP won't authorize
 
-- **`gcx config check` shows an error / not online:** re-run `gcx login --server https://payrails.grafana.net` (choose OAuth). If a stale `default` context is the only thing erroring, run `gcx config delete-context default`.
-- **`gcx login` returns "Access Denied … Assistant CLI User role required":** your Grafana role lacks the Assistant permission. This is an admin grant — ping Quang Ngo to enable it for your account. Nothing to fix locally.
-- **`gcx: command not found`:** gcx isn't installed or isn't on your PATH — `brew install grafana/grafana/gcx` (see Grafana setup).
+- **`grafana` shows "needs auth" / not Connected in `/mcp`:** ask Claude to use Grafana (e.g. "list the Grafana datasources") to re-surface the OAuth authorize URL, open it, and click **Allow access**.
+- **The authorize page says "Access Denied" / you don't have permission:** your Grafana role lacks the **"Assistant"** permission. This is an admin grant — ping Quang Ngo to enable it for your account. Nothing to fix locally.
+- **A specific query errors:** check the per-tool time-param format and the 30-day Loki window — see the gotchas in `skills/payrails-debug/references/grafana.md`.
 - **A query 403s on a specific resource** (e.g. dashboard *search*): some sub-permissions may not be granted; the skill routes around these (e.g. `dashboards list` instead of `search`). If a core operation (logs/metrics) is blocked, mention it to Quang.
 
 ### Cmd+Q vs the red X
@@ -234,7 +214,7 @@ rm -rf ~/.claude/plugins/marketplaces/payrails-debug-plugin/
 claude plugin marketplace remove payrails-debug-plugin
 ```
 
-Then Cmd+Q Antigravity to clear in-memory plugin state. Optionally also remove gcx if you don't use it elsewhere (`brew uninstall gcx`) and your gcx login (`rm -rf ~/.config/gcx`).
+Then Cmd+Q Antigravity to clear in-memory plugin state. (Nothing extra to clean up for Grafana — the MCP keeps no local state beyond its OAuth token, held by Claude.)
 
 The `claude plugin marketplace remove` step is important: it cleans up the marketplace registration in your `~/.claude/settings.json` (under `extraKnownMarketplaces`). Without this step, even after deleting the filesystem clones, Antigravity will see "Marketplace already on disk — declared in user settings" when you try to re-install, blocking a fresh install.
 
@@ -243,7 +223,6 @@ The `claude plugin marketplace remove` step is important: it cleans up the marke
 ## What this plugin does NOT include
 
 - The Payrails MCP (`go run ./cmd/payrails_mcp`) — that lives in the backend repo, requires Go and podman, and is for local Payrails service development. It's separate from this plugin.
-- The hosted Grafana Cloud MCP — Grafana is accessed via the `gcx` CLI, not the hosted MCP (it incurs Grafana Cloud usage cost, unbudgeted). Its config is documented in `CONNECTORS.md` ("Future — re-enabling the hosted MCP") for when that changes; it is deliberately not in `.mcp.json`.
 - Both staging and production Grafana data live on the same Cloud stack (`https://payrails.grafana.net`); scope queries to the correct environment/namespace (see `skills/payrails-debug/references/grafana.md`). Talk to the platform team if you need access beyond your default role.
 
 ---
