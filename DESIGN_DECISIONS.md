@@ -65,7 +65,7 @@ Each decision below documents:
 
 ## Grafana access: `gcx` CLI (supersedes op-inject + local-binary, 2026-06-18)
 
-> **⚠️ Superseded 2026-06-25** — Quang approved the hosted Grafana Cloud MCP, so Grafana now uses the **Grafana MCP** (`https://mcp.grafana.com/mcp`, browser OAuth), not the gcx CLI. This entry is kept as the rationale *and* the documented **fallback** (gcx needs no MCP-usage budget and avoids the agent-discovery confusion if ever reconsidered). The gcx↔MCP comparison is in `BUILD_HANDOFF.md`; the gcx `grafana.md` is preserved (`grafana.md.gcx-backup`, gitignored, + git history).
+> **⚠️ Superseded 2026-06-25** — Quang approved the hosted Grafana Cloud MCP, so Grafana now uses the **Grafana MCP** (`https://mcp.grafana.com/mcp`, browser OAuth), not the gcx CLI. The MCP is reached through the `mcp-remote` stdio bridge (not a native `type: http` block) for Cowork compatibility — see the **"Grafana MCP transport"** decision below. This entry is kept as the rationale *and* the documented **fallback** (gcx needs no MCP-usage budget and avoids the agent-discovery confusion if ever reconsidered). The gcx↔MCP comparison is in `BUILD_HANDOFF.md`; the gcx `grafana.md` is preserved (`grafana.md.gcx-backup`, gitignored, + git history).
 
 **Decision**: Grafana is accessed via Grafana's official **`gcx` CLI**, run from the shell by the debugging skill and authenticated with `gcx login` (browser OAuth). This **supersedes** both the "Credential handling: op inject" and "No podman containerization" decisions above, for Grafana.
 
@@ -87,6 +87,31 @@ Each decision below documents:
 
 **When to revisit**:
 - If/when the hosted Grafana Cloud MCP is budgeted *and* the Assistant MCP role is granted team-wide, we could switch to the no-binary hosted MCP (the dormant `.mcp.json` block is ready). That would change only the skill's *mechanics* back to MCP tool calls — the Payrails domain knowledge in `grafana.md` stays.
+
+---
+
+## Grafana MCP transport: `mcp-remote` stdio bridge, not native HTTP (2026-06-25)
+
+**Decision**: The Grafana MCP is declared as an **`mcp-remote` stdio bridge** (`command: npx … mcp-remote https://mcp.grafana.com/mcp --header X-Grafana-URL:…`), the same connector pattern as Plain and Snowflake — **not** as a native `type: http` block pointing at the same URL.
+
+**Context**: The hosted Grafana Cloud MCP supports both. Tested both transports against the live stack; both return the identical tool surface (including the dynamically-discovered `tempo_*` proxied tools) and identical data — `mcp-remote` is a transparent proxy to the same server, so there is **no capability, data-freshness, or meaningful performance difference**. The deciding factor was client reach.
+
+**Why the bridge**:
+- **Claude Cowork cannot complete the native remote-OAuth flow.** A native `type: http` Grafana block connects and authorizes fine in Claude Code, but Cowork fails the OAuth step. `mcp-remote` performs the OAuth itself and exposes a local stdio server, so **one block works across both Claude Code and Cowork** — required for plugin distribution (teammates update the plugin instead of hand-adding an MCP).
+- It matches the existing Plain/Snowflake pattern, so it adds **no new dependency class** the plugin doesn't already carry.
+
+**Alternatives considered**:
+- **Native `type: http` block** — cleaner (no Node subprocess, no bridge version to manage), but breaks in Cowork. Rejected for that reason alone.
+- **mcp-remote `@latest`** — gives **zero** Grafana freshness (the hosted server is always live regardless of bridge version) and lets a bad upstream release break the whole team at once. Rejected.
+
+**Trade-offs accepted**:
+- Adds a local Node/npx subprocess and an OAuth token cache under `~/.mcp-auth/` (same as Plain/Snowflake).
+- The bridge version is currently **unpinned** (`-y mcp-remote`, matching Plain/Snowflake) → non-deterministic across machines. Pinning (`mcp-remote@<version>`) is the recommended hardening for all three; not yet done.
+- For Cowork, the expectation is that the **GitHub-installed plugin alone** carries the connector (same as Snowflake) — `claude_desktop_config.json` is only a pre-push testing aid, not a per-user step. This is **pending verification** on a GitHub-installed plugin in Cowork; if it turns out Cowork does *not* auto-load plugin stdio MCPs, the per-user `claude_desktop_config.json` step returns (see the Cowork note in `CONNECTORS.md`).
+
+**Note on the docs**: this transport change is mechanics-only. `skills/payrails-debug/references/grafana.md` and `SKILL.md` are **unchanged** — every tool name, UID, and query pattern is identical because it's the same server reached the same-named (`grafana`) way.
+
+**When to revisit**: if Cowork gains native remote-MCP OAuth support, switch to the simpler `type: http` block (drops the Node subprocess and bridge-version concern); the skill docs would again need no change.
 
 ---
 
