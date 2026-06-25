@@ -19,5 +19,7 @@ CLAUDE.local.md
 .playwright-mcp/
 
 # Maintainer-local working files (not for the public plugin)
-grafana.md.backup
+# grafana.md*backup covers both: grafana.md.backup (pre-gcx self-hosted-MCP version)
+# and grafana.md.gcx-backup (the gcx-CLI version, kept in case we revert from the cloud MCP)
+grafana.md*backup
 payrails-backend-github-setup.md

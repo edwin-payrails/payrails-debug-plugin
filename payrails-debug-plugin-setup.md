@@ -85,39 +85,19 @@ All three commands should return version numbers without errors.
 
 ---
 
-## Step 4 — Set up Grafana access (`gcx` CLI)
+## Step 4 — Authorize Grafana (one-time, in Claude)
 
-Grafana is queried through the **`gcx` CLI** (Grafana's official command-line tool). There's **no binary to download manually and no credentials to put in any config file** — gcx logs you in through your browser and remembers it.
+Grafana is provided by the plugin's **Grafana MCP** — there's **nothing to install** (no binary, no credentials file, no Claude Desktop config edits). The first time Claude uses Grafana, you authorize it through your browser with one click.
 
-> Claude Code can run the install/verify commands for you; the browser login (Part 2) needs you to click through.
+**1.** After the plugin is installed (Step 1) and Claude Desktop is restarted, ask Claude something like *"use Grafana to list the datasources."*
 
-**1. Install gcx** (one-time):
+**2.** Claude will surface an **authorize URL** (the Grafana MCP needs OAuth on first use). Open it in your browser and click **Allow access**. You'll see **Read access** — allow it. *("Write access — you do not have permission to grant it" is expected; we only read.)*
 
-```bash
-brew install grafana/grafana/gcx
-```
+**3.** Once authorized, the Grafana tools work automatically. Confirm with **`/mcp`** in Claude — `grafana` should show **Connected**.
 
-**2. Log in to Grafana Cloud** (one-time — this opens your browser):
+> **If the authorize page says Access Denied / you don't have permission:** your Grafana account needs the **"Assistant"** role. Ask in **#help** (or the platform team) to enable it, then re-trigger the authorize flow. This is an admin-only grant — there's nothing to fix on your side.
 
-```bash
-gcx login --server https://payrails.grafana.net
-```
-
-- When prompted, choose the **OAuth (browser)** option.
-- Sign in / approve in the browser that opens (check the verification code matches the terminal).
-- When it asks for an optional **"Grafana Cloud API token,"** just press **Enter** to skip it — it's not needed.
-
-**3. Verify the connection:**
-
-```bash
-gcx config check
-```
-
-You should see `Auth method: oauth`, `Connectivity: online`, current context `payrails`, and a Grafana version. *(If a separate `default` context is reported as invalid, that's a harmless leftover — run `gcx config delete-context default`.)*
-
-> **If `gcx login` says "Access Denied — you need the Assistant CLI User role":** your Grafana account hasn't been granted the permission yet. Ask in **#help** (or the platform team) to enable the **Assistant CLI User** role for your Grafana Cloud account, then re-run `gcx login`. This is an admin-only access grant — there's nothing to fix on your side.
-
-That's the whole Grafana setup — no binary, no credentials file, and **no Claude Desktop config edits**. gcx stores your login under `~/.config/gcx/config.yaml` and the plugin uses it automatically.
+That's the whole Grafana setup — no install, no terminal commands, no config edits.
 
 ---
 
@@ -140,7 +120,6 @@ Once set up, the plugin can pull data from the following sources to assist with 
 | Symptom | Fix |
 |---|---|
 | `node: command not found` | Re-run `brew install node` and open a new terminal |
-| `gcx: command not found` | Re-run `brew install grafana/grafana/gcx` and open a new terminal |
-| `gcx login` says "Access Denied / Assistant CLI User role required" | Your Grafana account needs the **Assistant CLI User** role — ask in #help / the platform team to grant it, then re-run `gcx login --server https://payrails.grafana.net` |
+| Grafana authorize page says "Access Denied" / no permission | Your Grafana account needs the **"Assistant"** role — ask in #help / the platform team to grant it, then re-trigger the authorize flow |
 | Plugin not appearing after install | Restart Claude Desktop and check Customize → Personal plugins |
-| Grafana queries failing | Run `gcx config check`; if it's not `online`, re-run `gcx login --server https://payrails.grafana.net` and choose the OAuth option |
+| Grafana not connecting / queries failing | In Claude run `/mcp`; if `grafana` isn't **Connected**, ask Claude to use Grafana again to re-surface the authorize link, open it, and **Allow access** |

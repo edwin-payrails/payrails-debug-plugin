@@ -46,6 +46,7 @@ Common cases (illustrative — **not** exhaustive, and **not** a closed list):
 - The impacted set of transactions for a filter (e.g. an incident's blast radius)
 - Anything a merchant sends in their request body, including **metadata fields**, and analysis
   over **raw PSP responses**
+- 3DS / SCA authentication outcomes, and fraud / risk-check data
 - Payment anomalies / incidents (see the anomaly section below)
 
 **Single transactions are fair game too.** `dwh-core` holds individual transaction records, so
