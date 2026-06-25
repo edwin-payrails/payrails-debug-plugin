@@ -26,6 +26,7 @@ Common cases (illustrative — **not** exhaustive, and **not** a closed list):
 - TPV, attempt counts, retry-recovery rate, volume / payment-method distribution
 - The **impacted set of transactions** for a filter (an incident's blast radius — "how many txns matched this?")
 - Anything a merchant sends in their request body, including **metadata fields**, and analysis over **raw PSP responses**
+- 3DS / SCA authentication outcomes, and fraud / risk-check data
 - Payment **anomalies / incidents** (see below)
 
 **Single transactions too.** `dwh-core` holds individual transaction records — use Snowflake
