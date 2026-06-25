@@ -56,9 +56,14 @@
             }
         },
         "grafana": {
-            "type": "http",
-            "url": "https://mcp.grafana.com/mcp",
-            "headers": { "X-Grafana-URL": "https://payrails.grafana.net" }
+            "command": "npx",
+            "args": [
+                "-y",
+                "mcp-remote",
+                "https://mcp.grafana.com/mcp",
+                "--header",
+                "X-Grafana-URL:https://payrails.grafana.net"
+            ]
         }
     }
 }

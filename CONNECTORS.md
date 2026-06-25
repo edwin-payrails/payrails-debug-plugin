@@ -19,7 +19,7 @@ The plugin declares **8 MCP servers** in `.mcp.json` (Plain, Slack, Linear, Noti
 | Snowflake | npx stdio (`mcp-remote` → Snowflake-hosted) | Browser OAuth (via `mcp-remote`) | Query warehouse payment data — trends, declines, anomalies, merchant metrics |
 | Playwright | npx stdio (local Node.js) | None | Browser automation for fetching JS-rendered content |
 | Temporal | node stdio (bundled local server) | None (internal cluster routing) | Workflow execution state, history, payload decode |
-| Grafana | HTTP (hosted Grafana Cloud MCP) | Browser OAuth (first use) | Query Loki logs, Prometheus metrics, Tempo traces, dashboards |
+| Grafana | npx stdio (`mcp-remote` → hosted Grafana Cloud MCP) | Browser OAuth (via `mcp-remote`) | Query Loki logs, Prometheus metrics, Tempo traces, dashboards |
 
 ---
 
@@ -157,18 +157,25 @@ The plugin declares **8 MCP servers** in `.mcp.json` (Plain, Slack, Linear, Noti
 
 ## Grafana MCP
 
-**What it is**: Grafana Cloud (`https://payrails.grafana.net`) — Loki logs, Prometheus metrics, Tempo traces, dashboards, alerts — via the **hosted Grafana Cloud MCP** (`https://mcp.grafana.com/mcp`), declared as `grafana` in `.mcp.json`. Its tools (`query_loki_logs`, `query_prometheus`, `search_dashboards`, the `tempo_*` trace tools, etc.) are exposed to the agent directly.
+**What it is**: Grafana Cloud (`https://payrails.grafana.net`) — Loki logs, Prometheus metrics, Tempo traces, dashboards, alerts — via the **hosted Grafana Cloud MCP** (`https://mcp.grafana.com/mcp`), reached through the **`mcp-remote` stdio bridge** (the same pattern as Plain and Snowflake), declared as `grafana` in `.mcp.json`. Its tools (`query_loki_logs`, `query_prometheus`, `search_dashboards`, the `tempo_*` trace tools, etc.) are exposed to the agent directly — `mcp-remote` is a transparent proxy, so the full tool surface and live server are identical to a native HTTP connection.
 
 **Configuration** (in `.mcp.json`):
 ```json
 "grafana": {
-  "type": "http",
-  "url": "https://mcp.grafana.com/mcp",
-  "headers": { "X-Grafana-URL": "https://payrails.grafana.net" }
+  "command": "npx",
+  "args": [
+    "-y",
+    "mcp-remote",
+    "https://mcp.grafana.com/mcp",
+    "--header",
+    "X-Grafana-URL:https://payrails.grafana.net"
+  ]
 }
 ```
 
-**Authentication**: browser **OAuth** on first use — the agent surfaces an authorize URL; the user clicks **Allow** (Read access). No binary, no credentials file, no env vars. Requires the Grafana **"Assistant"** role (admin-granted by the platform team); if authorization is denied, that's a role grant, not a config issue. *(History: this stack briefly used the `gcx` CLI while the hosted MCP was cost-deferred; the platform team has since approved the MCP. The gcx approach + a gcx-vs-MCP comparison are preserved in `BUILD_HANDOFF.md` and the git history of `grafana.md` in case it's ever revisited.)*
+**Why the `mcp-remote` bridge and not a native `type: http` block**: the hosted Cloud MCP works fine as native HTTP in Claude Code, but **Claude Cowork cannot complete the native remote-OAuth flow**. `mcp-remote` runs the OAuth itself and presents a local stdio server, so the same block works across **both** Claude Code and Cowork — which is required for plugin distribution. See the "Grafana MCP transport" decision in `DESIGN_DECISIONS.md`. (`X-Grafana-URL` is passed via `--header` with no space after the colon — `mcp-remote` splits on the first colon, so the `https://` value binds correctly.)
+
+**Authentication**: browser **OAuth** on first use — `mcp-remote` surfaces an authorize URL; the user clicks **Allow** (Read access), and the token is cached under `~/.mcp-auth/`. No binary to install, no credentials file, no env vars (npx fetches `mcp-remote` automatically, exactly as for Plain/Snowflake). Requires the Grafana **"Assistant"** role (admin-granted by the platform team); if authorization is denied, that's a role grant, not a config issue. *(History: this stack briefly used the `gcx` CLI while the hosted MCP was cost-deferred; the platform team has since approved the MCP. The gcx approach + a gcx-vs-MCP comparison are preserved in `BUILD_HANDOFF.md` and the git history of `grafana.md` in case it's ever revisited.)*
 
 **What it provides** (a rich, auto-advertised tool surface):
 - `list_datasources` — datasources + UIDs (Prometheus `grafanacloud-prom`, Loki `grafanacloud-logs`, Tempo `grafanacloud-traces`)
@@ -191,6 +198,8 @@ The query patterns, real datasource UIDs, the merchant/namespace ladder, and got
 4. **`up` doesn't cover backend app jobs** (only infra); the `job` label is namespaced (`backend-stable-<service>-http`), so `up{job="backend"}` is empty — query a real app metric for backend health. See grafana.md.
 
 5. **Dashboard `search` works** for the SE role via the MCP (it was 403 via the earlier gcx path — a real behavioral difference between the two access methods).
+
+6. **`mcp-remote` version is unpinned** (`-y mcp-remote`, matching Plain/Snowflake), so each machine runs whatever npx has cached — this affects only the *bridge*, never the Grafana server version (the server is always the live hosted one). To make the bridge deterministic across the team, pin it (`mcp-remote@<version>`) — a maintainer change worth doing for Plain/Snowflake too. Do **not** use `@latest`: it gives no Grafana freshness (the server is already live) and lets a bad release break everyone at once.
 
 ---
 
@@ -216,9 +225,11 @@ The plugin install only sets up MCP **declarations**. Some MCPs need additional 
 | Slack | First-use OAuth (one click) |
 | Linear | First-use OAuth (one click) |
 | Notion | First-use OAuth (one click) |
-| Snowflake | First-use browser OAuth (one login, then cached). Requires the `ANALYST` Snowflake role (request in #help). For Cowork, also add the block to `claude_desktop_config.json`. |
+| Snowflake | First-use browser OAuth (one login, then cached). Requires the `ANALYST` Snowflake role (request in #help). For Cowork, see the **Cowork note** below. |
 | Playwright | None (npx fetches package) |
 | Temporal | None (configured via `.mcp.json`). |
-| Grafana | One-time: authorize the `grafana` MCP via the OAuth link on first use (click Allow). Requires the Grafana "Assistant" role (admin-granted). See README. |
+| Grafana | One-time: authorize the `grafana` MCP via the OAuth link on first use (click Allow). Requires the Grafana "Assistant" role (admin-granted). For Cowork, see the **Cowork note** below. See README. |
+
+> **Cowork note (Snowflake & Grafana — the two `mcp-remote` stdio connectors):** once the plugin is installed/updated from GitHub, the MCP declared in the plugin's `.mcp.json` is **sufficient for Cowork** — there's nothing extra to add. Defining the block in `claude_desktop_config.json` is only a **pre-push testing aid**: a maintainer can drop the block there to confirm the connector works in Cowork *before* pushing the plugin change to GitHub, then remove it. The plugin change is only pushed after it's validated in **three places**: (1) `claude_desktop_config.json` + Claude Cowork, (2) the local plugin repo (`payrails-debug-plugin`), and (3) a local directory that consumes the installed plugin (`backend-plugin-test`). After the push, the GitHub-installed plugin alone carries the connector for everyone — no `claude_desktop_config.json` entry needed.
 
 If something isn't working: check `/mcp` in Claude Code — it will show which MCPs are Connected vs Failed vs Needs Auth.
